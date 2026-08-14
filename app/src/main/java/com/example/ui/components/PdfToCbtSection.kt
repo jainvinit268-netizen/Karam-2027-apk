@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Difficulty
 import com.example.data.model.QuestionItem
-import com.example.data.model.QuestionSection
 import com.example.data.model.QuestionType
 import com.example.data.model.Subject
 import com.example.data.sample.SampleJeePapers
@@ -695,7 +694,7 @@ fun TestMakingLivePreviewCard(
                                         color = JeeCyan.copy(alpha = 0.2f)
                                     ) {
                                         Text(
-                                            text = "Q${currentQuestionIndex + 1} • ${if (q.type == QuestionType.SINGLE_CHOICE) "Section A (MCQ)" else "Section B (Numerical)"}",
+                                            text = "Q${currentQuestionIndex + 1} • ${if (q.type == QuestionType.MCQ) "Section A (MCQ)" else "Section B (Numerical)"}",
                                             color = JeeCyan,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 11.sp,
@@ -726,7 +725,7 @@ fun TestMakingLivePreviewCard(
                                 )
 
                                 // Options / Numerical Input
-                                if (q.type == QuestionType.SINGLE_CHOICE && !q.options.isNullOrEmpty()) {
+                                if (q.type == QuestionType.MCQ && !q.options.isNullOrEmpty()) {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         val optLabels = listOf("A", "B", "C", "D")
                                         q.options.forEachIndexed { optIdx, optText ->
