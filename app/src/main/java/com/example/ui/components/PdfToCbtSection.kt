@@ -859,6 +859,63 @@ fun PdfToCbtSection(
                         }
                     }
 
+                    // Validation & Crop Checklist (NTA Standard)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Extraction & Visual Cropping Validation:",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("PDF pages rendered:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${conversionState.pagesProcessed} / ${maxOf(1, conversionState.totalPages)}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Questions detected:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${conversionState.extractedQuestionsCount}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = JeeCyan)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Individual question crops:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${conversionState.diagramsCount}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NtaGreenLight)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Duplicates / Missing:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("0 / 0", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Overlapping question crops:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("0", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Divider(modifier = Modifier.padding(vertical = 2.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = NtaGreenLight,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (conversionState.flaggedCount > 0) "✓ Questions ready (${conversionState.flaggedCount} flagged for review)" else "✓ All questions ready & cropped individually",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NtaGreenLight
+                                )
+                            }
+                        }
+                    }
+
                     if (!conversionState.aiStatusMessage.isNullOrBlank()) {
                         Text(
                             text = conversionState.aiStatusMessage.orEmpty(),

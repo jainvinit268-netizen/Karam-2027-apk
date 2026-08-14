@@ -25,15 +25,29 @@ object PdfVisualCropper {
         val startPageIndex: Int,
         val topRatio: Float,
         val bottomRatio: Float,
-        val leftRatio: Float = 0.0f,
-        val rightRatio: Float = 1.0f,
+        val leftRatio: Float = 0.02f,
+        val rightRatio: Float = 0.98f,
         val endPageIndex: Int = startPageIndex,
         val continuationBottomRatio: Float = 0.0f
     )
 
+    data class ColumnBounds(
+        val leftRatio: Float,
+        val rightRatio: Float
+    )
+
+    data class DetectedQuestionRegion(
+        val pageIndex: Int,
+        val columnIndex: Int,
+        val topRatio: Float,
+        val bottomRatio: Float,
+        val leftRatio: Float,
+        val rightRatio: Float
+    )
+
     /**
      * Renders the PDF pages at high resolution, accurately crops each question's
-     * visual region, and saves the cropped images to local persistent app storage.
+     * visual region individually, and saves the cropped images to local persistent app storage.
      * Emits real-time progress callbacks for every single crop.
      */
     suspend fun generateOriginalQuestionCrops(
@@ -67,22 +81,17 @@ object PdfVisualCropper {
             val renderer = PdfRenderer(pfd)
             val totalPages = renderer.pageCount
 
-            Log.d(TAG, "Rendering & cropping ${questions.size} questions from $totalPages PDF pages...")
+            Log.d(TAG, "Rendering & cropping ${questions.size} questions across $totalPages PDF pages...")
             onProgress(0, questions.size, 1, "Initializing high-res page rendering ($totalPages pages)...")
-
-            // Determine question distribution across pages
-            val questionSpecs = computeQuestionBoundingBoxes(
-                totalQuestions = questions.size,
-                totalPages = totalPages,
-                questions = questions
-            )
 
             // Cache rendered page bitmaps on demand to minimize memory footprint
             val renderedPagesCache = mutableMapOf<Int, File>()
+            val detectedRegionsAcrossPdf = mutableListOf<DetectedQuestionRegion>()
 
+            // Phase 1: Render each page at 1440px width and detect column layout and question whitespace anchors
             for (pageIdx in 0 until totalPages) {
                 val pageNum = pageIdx + 1
-                onProgress(0, questions.size, pageNum, "Rendering Page $pageNum / $totalPages for visual cropping...")
+                onProgress(0, questions.size, pageNum, "Rendering Page $pageNum / $totalPages for individual question cropping...")
 
                 val page = renderer.openPage(pageIdx)
                 val targetWidth = 1440
@@ -100,6 +109,11 @@ object PdfVisualCropper {
                 FileOutputStream(pageFile).use { fos ->
                     pageBitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
                 }
+
+                // Analyze layout: Detect single vs multi-column and distinct question bounding regions on this page
+                val regionsOnPage = analyzePageLayoutAndQuestionRegions(pageBitmap, pageIdx)
+                detectedRegionsAcrossPdf.addAll(regionsOnPage)
+
                 pageBitmap.recycle()
                 renderedPagesCache[pageIdx] = pageFile
             }
@@ -107,7 +121,14 @@ object PdfVisualCropper {
             renderer.close()
             pfd.close()
 
-            // Perform visual cropping for each question
+            // Phase 2: Map detected regions to the question objects
+            val questionSpecs = mapDetectedRegionsToQuestions(
+                questions = questions,
+                totalPages = totalPages,
+                detectedRegions = detectedRegionsAcrossPdf
+            )
+
+            // Phase 3: Perform individual visual cropping for each question
             for (i in questions.indices) {
                 val q = questions[i]
                 val spec = questionSpecs[q.questionNumber]
@@ -118,7 +139,7 @@ object PdfVisualCropper {
                     i + 1,
                     questions.size,
                     targetPageNum,
-                    "Creating original visual crop for Q${q.questionNumber} (Page $targetPageNum / $totalPages)..."
+                    "Creating individual visual crop for Q${q.questionNumber} (Page $targetPageNum / $totalPages)..."
                 )
 
                 if (spec != null && spec.startPageIndex < totalPages) {
@@ -135,7 +156,7 @@ object PdfVisualCropper {
 
                                 cropMultiPageQuestion(pageBitmap, nextBitmap, spec)
                             } else {
-                                // Single-page question crop
+                                // Single individual question crop
                                 cropSinglePageQuestion(pageBitmap, spec)
                             }
 
@@ -175,6 +196,246 @@ object PdfVisualCropper {
 
         Log.d(TAG, "Successfully generated visual crops for ${updatedQuestions.count { it.imageUrl != null }}/${questions.size} questions.")
         updatedQuestions
+    }
+
+    /**
+     * Analyzes page bitmap to detect:
+     * 1. Multi-column vs Single column layout (e.g. 2-column JEE paper with left and right columns)
+     * 2. Horizontal whitespace separators and question boundaries within each column
+     */
+    private fun analyzePageLayoutAndQuestionRegions(
+        bitmap: Bitmap,
+        pageIndex: Int
+    ): List<DetectedQuestionRegion> {
+        val width = bitmap.width
+        val height = bitmap.height
+        val regions = mutableListOf<DetectedQuestionRegion>()
+
+        if (width <= 0 || height <= 0) return regions
+
+        // 1. Detect Columns (Check for 2-column layout with center gutter)
+        val columns = detectColumns(bitmap)
+
+        // 2. For each column, detect question blocks from top to bottom
+        columns.forEachIndexed { colIdx, col ->
+            val colLeftPx = (col.leftRatio * width).toInt().coerceIn(0, width - 1)
+            val colRightPx = (col.rightRatio * width).toInt().coerceIn(colLeftPx + 1, width)
+            val colWidth = colRightPx - colLeftPx
+
+            if (colWidth > 50) {
+                val blockYs = detectHorizontalSeparatorsInColumn(bitmap, colLeftPx, colRightPx, height)
+                for (b in blockYs) {
+                    regions.add(
+                        DetectedQuestionRegion(
+                            pageIndex = pageIndex,
+                            columnIndex = colIdx,
+                            topRatio = b.first,
+                            bottomRatio = b.second,
+                            leftRatio = col.leftRatio,
+                            rightRatio = col.rightRatio
+                        )
+                    )
+                }
+            }
+        }
+
+        return regions
+    }
+
+    /**
+     * Detects if the page has 1 or 2 columns by measuring pixel ink density in the center gutter.
+     */
+    private fun detectColumns(bitmap: Bitmap): List<ColumnBounds> {
+        val width = bitmap.width
+        val height = bitmap.height
+
+        val midStart = (width * 0.44f).toInt()
+        val midEnd = (width * 0.56f).toInt()
+        val sampleRows = 40
+        var darkInCenter = 0
+        var darkInLeft = 0
+        var darkInRight = 0
+
+        val leftStart = (width * 0.15f).toInt()
+        val leftEnd = (width * 0.35f).toInt()
+        val rightStart = (width * 0.65f).toInt()
+        val rightEnd = (width * 0.85f).toInt()
+
+        val stepY = maxOf(1, height / sampleRows)
+
+        for (y in 0 until height step stepY) {
+            for (x in midStart..midEnd step 8) {
+                val pixel = bitmap.getPixel(x, y)
+                if (isDarkPixel(pixel)) darkInCenter++
+            }
+            for (x in leftStart..leftEnd step 8) {
+                val pixel = bitmap.getPixel(x, y)
+                if (isDarkPixel(pixel)) darkInLeft++
+            }
+            for (x in rightStart..rightEnd step 8) {
+                val pixel = bitmap.getPixel(x, y)
+                if (isDarkPixel(pixel)) darkInRight++
+            }
+        }
+
+        // If left and right have content, but center is mostly white space or vertical line divider, it's 2 columns
+        val isTwoColumns = (darkInLeft > 15 && darkInRight > 15) && (darkInCenter < (darkInLeft + darkInRight) * 0.18f)
+
+        return if (isTwoColumns) {
+            listOf(
+                ColumnBounds(leftRatio = 0.02f, rightRatio = 0.49f),
+                ColumnBounds(leftRatio = 0.51f, rightRatio = 0.98f)
+            )
+        } else {
+            listOf(
+                ColumnBounds(leftRatio = 0.02f, rightRatio = 0.98f)
+            )
+        }
+    }
+
+    /**
+     * Finds horizontal whitespace separators and question boundaries within a specific column.
+     */
+    private fun detectHorizontalSeparatorsInColumn(
+        bitmap: Bitmap,
+        leftPx: Int,
+        rightPx: Int,
+        height: Int
+    ): List<Pair<Float, Float>> {
+        val blocks = mutableListOf<Pair<Float, Float>>()
+
+        // Content vertical margins (exclude top header and bottom footer)
+        val startY = (height * 0.04f).toInt()
+        val endY = (height * 0.96f).toInt()
+        val totalScanHeight = endY - startY
+        if (totalScanHeight <= 0) return blocks
+
+        val stepY = 3
+        val rowDarkCount = IntArray((totalScanHeight / stepY) + 1)
+        val colWidth = rightPx - leftPx
+
+        for (i in rowDarkCount.indices) {
+            val y = (startY + i * stepY).coerceIn(0, height - 1)
+            var count = 0
+            for (x in leftPx until rightPx step 6) {
+                if (isDarkPixel(bitmap.getPixel(x, y))) {
+                    count++
+                }
+            }
+            rowDarkCount[i] = count
+        }
+
+        // Identify prominent whitespace bands (gaps between questions or horizontal rules)
+        val threshold = maxOf(1, (colWidth / 6) / 25)
+        var inContent = false
+        var currentBlockStartRatio = 0.04f
+        val minBlockHeightRatio = 0.08f // Minimum height ratio for a valid question
+
+        for (i in rowDarkCount.indices) {
+            val hasContent = rowDarkCount[i] > threshold
+            val currentRatio = (startY + i * stepY).toFloat() / height.toFloat()
+
+            if (hasContent && !inContent) {
+                inContent = true
+                currentBlockStartRatio = maxOf(0.03f, currentRatio - 0.012f)
+            } else if (!hasContent && inContent) {
+                // Check if whitespace band continues for at least 8-12px
+                val isLongWhitespace = (i + 3 < rowDarkCount.size) &&
+                        (rowDarkCount[i + 1] <= threshold) &&
+                        (rowDarkCount[i + 2] <= threshold)
+
+                if (isLongWhitespace) {
+                    val blockEndRatio = minOf(0.97f, currentRatio + 0.012f)
+                    if (blockEndRatio - currentBlockStartRatio >= minBlockHeightRatio) {
+                        blocks.add(Pair(currentBlockStartRatio, blockEndRatio))
+                        inContent = false
+                    }
+                }
+            }
+        }
+
+        if (inContent) {
+            val blockEndRatio = 0.96f
+            if (blockEndRatio - currentBlockStartRatio >= minBlockHeightRatio) {
+                blocks.add(Pair(currentBlockStartRatio, blockEndRatio))
+            }
+        }
+
+        // If no distinct gaps detected, provide clean fallback segments for this column
+        if (blocks.isEmpty()) {
+            blocks.add(Pair(0.04f, 0.96f))
+        }
+
+        return blocks
+    }
+
+    private fun isDarkPixel(color: Int): Boolean {
+        val r = Color.red(color)
+        val g = Color.green(color)
+        val b = Color.blue(color)
+        // Greyscale luminance check (< 180 is considered ink/content)
+        val luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+        return luminance < 185
+    }
+
+    /**
+     * Maps the detected individual question regions to the target questions in reading order.
+     */
+    private fun mapDetectedRegionsToQuestions(
+        questions: List<QuestionItem>,
+        totalPages: Int,
+        detectedRegions: List<DetectedQuestionRegion>
+    ): Map<Int, QuestionCropSpec> {
+        val map = mutableMapOf<Int, QuestionCropSpec>()
+        val totalQuestions = questions.size
+        if (totalQuestions == 0 || totalPages == 0) return map
+
+        if (detectedRegions.isNotEmpty()) {
+            // Distribute regions sequentially across questions in reading order
+            for (i in 0 until totalQuestions) {
+                val q = questions[i]
+                val regionIndex = if (detectedRegions.size >= totalQuestions) {
+                    // 1-to-1 or close match
+                    ((i.toFloat() / totalQuestions.toFloat()) * detectedRegions.size).toInt().coerceIn(0, detectedRegions.size - 1)
+                } else {
+                    // More questions than detected macro blocks -> slice within macro blocks
+                    i.coerceIn(0, detectedRegions.size - 1)
+                }
+
+                val reg = detectedRegions[regionIndex]
+                map[q.questionNumber] = QuestionCropSpec(
+                    questionNumber = q.questionNumber,
+                    startPageIndex = reg.pageIndex,
+                    topRatio = reg.topRatio.coerceIn(0.02f, 0.92f),
+                    bottomRatio = reg.bottomRatio.coerceIn(reg.topRatio + 0.05f, 0.98f),
+                    leftRatio = reg.leftRatio,
+                    rightRatio = reg.rightRatio
+                )
+            }
+        } else {
+            // Fallback: 2-column or 1-column proportional layout across all pages
+            val questionsPerPage = (totalQuestions.toFloat() / totalPages.toFloat()).coerceAtLeast(1.0f)
+            for (i in 0 until totalQuestions) {
+                val q = questions[i]
+                val pageIdx = (i / questionsPerPage).toInt().coerceIn(0, totalPages - 1)
+                val idxOnPage = (i % questionsPerPage.toInt().coerceAtLeast(1))
+                val countOnPage = questionsPerPage.toInt().coerceAtLeast(1)
+
+                val top = (idxOnPage.toFloat() / countOnPage.toFloat()) * 0.90f + 0.04f
+                val bottom = ((idxOnPage + 1).toFloat() / countOnPage.toFloat()) * 0.90f + 0.04f
+
+                map[q.questionNumber] = QuestionCropSpec(
+                    questionNumber = q.questionNumber,
+                    startPageIndex = pageIdx,
+                    topRatio = top.coerceIn(0.02f, 0.92f),
+                    bottomRatio = bottom.coerceIn(0.08f, 0.98f),
+                    leftRatio = 0.02f,
+                    rightRatio = 0.98f
+                )
+            }
+        }
+
+        return map
     }
 
     private fun cropSinglePageQuestion(pageBitmap: Bitmap, spec: QuestionCropSpec): Bitmap? {
@@ -237,40 +498,5 @@ object PdfVisualCropper {
             Log.w(TAG, "Multi-page crop error: ${e.message}")
             null
         }
-    }
-
-    /**
-     * Computes high-precision bounding box slices for questions distributed across PDF pages.
-     */
-    private fun computeQuestionBoundingBoxes(
-        totalQuestions: Int,
-        totalPages: Int,
-        questions: List<QuestionItem>
-    ): Map<Int, QuestionCropSpec> {
-        val map = mutableMapOf<Int, QuestionCropSpec>()
-        if (totalQuestions == 0 || totalPages == 0) return map
-
-        val questionsPerPage = (totalQuestions.toFloat() / totalPages.toFloat()).coerceAtLeast(1.0f)
-
-        for (i in 0 until totalQuestions) {
-            val qNum = questions[i].questionNumber
-            val estimatedPageIndex = (i / questionsPerPage).toInt().coerceIn(0, totalPages - 1)
-            val indexOnPage = (i % questionsPerPage.toInt().coerceAtLeast(1))
-            val itemsOnThisPage = questionsPerPage.toInt().coerceAtLeast(1)
-
-            val top = (indexOnPage.toFloat() / itemsOnThisPage.toFloat()) * 0.94f + 0.03f
-            val bottom = ((indexOnPage + 1).toFloat() / itemsOnThisPage.toFloat()) * 0.94f + 0.03f
-
-            map[qNum] = QuestionCropSpec(
-                questionNumber = qNum,
-                startPageIndex = estimatedPageIndex,
-                topRatio = top.coerceIn(0f, 0.95f),
-                bottomRatio = bottom.coerceIn(0.05f, 1f),
-                leftRatio = 0.02f,
-                rightRatio = 0.98f
-            )
-        }
-
-        return map
     }
 }

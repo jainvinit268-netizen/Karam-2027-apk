@@ -171,35 +171,35 @@ fun CustomTestLaunchDialog(
                     fontWeight = FontWeight.Bold
                 )
 
-                Row(
+                val dynamicLimits = mutableListOf<Pair<String, Int?>>()
+                dynamicLimits.add("All (${test.totalQuestions})" to null)
+                val candidates = listOf(5, 10, 15, 20, 25, 30, 45, 60, 75)
+                candidates.filter { it < test.totalQuestions }.take(4).forEach { count ->
+                    dynamicLimits.add("$count Qs" to count)
+                }
+
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val limits = listOf<Pair<String, Int?>>(
-                        "All (${test.totalQuestions})" to null,
-                        "10 Qs" to 10,
-                        "20 Qs" to 20,
-                        "30 Qs" to 30
-                    )
-
-                    limits.forEach { (label, count) ->
+                    items(dynamicLimits) { (label, count) ->
                         val isSelected = selectedQuestionLimit == count
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) JeeCyan else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier
-                                .weight(1f)
                                 .clickable { selectedQuestionLimit = count }
+                                .testTag("limit_chip_${count ?: "all"}")
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(vertical = 8.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             ) {
                                 Text(
                                     text = label,
                                     color = if (isSelected) JeeNavyDark else MaterialTheme.colorScheme.onSurface,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 10.sp
+                                    fontSize = 11.sp
                                 )
                             }
                         }

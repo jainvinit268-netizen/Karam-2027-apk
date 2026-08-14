@@ -5,9 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -422,6 +426,10 @@ private fun QuestionContentView(
             }
 
             if (showZoomDialog) {
+                var zoomScale by remember { mutableStateOf(1f) }
+                var offsetX by remember { mutableStateOf(0f) }
+                var offsetY by remember { mutableStateOf(0f) }
+
                 Dialog(
                     onDismissRequest = { showZoomDialog = false },
                     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -430,24 +438,56 @@ private fun QuestionContentView(
                         modifier = Modifier.fillMaxSize(),
                         color = Color.Black.copy(alpha = 0.95f)
                     ) {
-                        Box(modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectTransformGestures { _, pan, zoom, _ ->
+                                        zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                                        offsetX = if (zoomScale > 1f) offsetX + pan.x else 0f
+                                        offsetY = if (zoomScale > 1f) offsetY + pan.y else 0f
+                                    }
+                                }
+                        ) {
                             AsyncImage(
                                 model = question.imageUrl,
                                 contentDescription = "Zoomed Question Image",
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .graphicsLayer(
+                                        scaleX = zoomScale,
+                                        scaleY = zoomScale,
+                                        translationX = offsetX,
+                                        translationY = offsetY
+                                    )
                                     .padding(16.dp)
                             )
 
-                            IconButton(
-                                onClick = { showZoomDialog = false },
+                            Row(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(24.dp)
-                                    .background(Color.White.copy(alpha = 0.3f), CircleShape)
+                                    .padding(24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                                if (zoomScale > 1f) {
+                                    IconButton(
+                                        onClick = {
+                                            zoomScale = 1f
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        },
+                                        modifier = Modifier.background(Color.White.copy(alpha = 0.3f), CircleShape)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Reset Zoom", tint = Color.White)
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { showZoomDialog = false },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.3f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                                }
                             }
                         }
                     }
@@ -589,13 +629,15 @@ private fun CbtBottomActionBar(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 6.dp,
-        border = CardDefaults.outlinedCardBorder()
+        tonalElevation = 8.dp,
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .navigationBarsPadding()
+                .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
         ) {
             // Row 1: Actions (Previous, Clear, Review)
             Row(
@@ -670,6 +712,7 @@ private fun QuestionPaletteSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .padding(16.dp)
     ) {
         Text(
@@ -721,7 +764,7 @@ private fun QuestionPaletteSheet(
                 .fillMaxWidth()
                 .heightIn(max = 280.dp)
         ) {
-            items(questionsInSubj) { q ->
+            itemsIndexed(questionsInSubj) { index, q ->
                 val resp = examState.responses[q.id]
                 val status = resp?.status ?: QuestionStatus.NOT_VISITED
 
@@ -733,17 +776,19 @@ private fun QuestionPaletteSheet(
                     QuestionStatus.NOT_VISITED -> NtaGrayDark.copy(alpha = 0.4f)
                 }
 
+                val cbtQuestionNumber = index + 1
+
                 Box(
                     modifier = Modifier
                         .aspectRatio(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(bgColor)
                         .clickable { onQuestionClick(q.id) }
-                        .testTag("palette_q_${q.questionNumber}"),
+                        .testTag("palette_q_$cbtQuestionNumber"),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "${q.questionNumber}",
+                        text = "$cbtQuestionNumber",
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontSize = 13.sp

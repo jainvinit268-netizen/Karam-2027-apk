@@ -319,7 +319,8 @@ object GeminiJeeExtractor {
 
             for (i in 0 until questionsArray.length()) {
                 val qObj = questionsArray.getJSONObject(i)
-                val qNum = qObj.optInt("questionNumber", i + 1)
+                val rawNum = qObj.optInt("questionNumber", i + 1)
+                val qNum = if (rawNum in 1..300) rawNum else (i + 1)
                 val subjStr = qObj.optString("subject", "PHYSICS").uppercase()
                 val subject = when {
                     subjStr.contains("PHY") -> Subject.PHYSICS
@@ -456,7 +457,8 @@ object GeminiJeeExtractor {
 
         if (matches.isNotEmpty()) {
             for (m in matches) {
-                val qNum = m.groupValues[1].toIntOrNull() ?: (questions.size + 1)
+                val parsedNum = m.groupValues[1].toIntOrNull()
+                val qNum = if (parsedNum != null && parsedNum in 1..300) parsedNum else (questions.size + 1)
                 val fullText = m.groupValues[2].trim()
 
                 val currentSubject = when {
