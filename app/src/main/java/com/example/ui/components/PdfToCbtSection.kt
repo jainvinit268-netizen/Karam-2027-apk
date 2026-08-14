@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.ai.PdfDocumentHelper
 import com.example.data.model.Subject
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.JeeViewModel
@@ -61,10 +62,11 @@ fun PdfToCbtSection(
     ) { uri: Uri? ->
         if (uri != null) {
             selectedPdfUri = uri
-            val resolvedName = uri.lastPathSegment?.substringAfterLast("/") ?: "Question_Paper.pdf"
+            val resolvedName = PdfDocumentHelper.getFileNameFromUri(context, uri)
             selectedPdfFileName = resolvedName
             if (testTitle.isBlank()) {
-                testTitle = resolvedName.substringBeforeLast(".").replace("_", " ")
+                val cleanName = resolvedName.substringBeforeLast(".").replace("_", " ").replace("-", " ")
+                testTitle = cleanName
             }
         }
     }
@@ -74,7 +76,7 @@ fun PdfToCbtSection(
     ) { uri: Uri? ->
         if (uri != null) {
             selectedAnswerKeyUri = uri
-            selectedAnswerKeyFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "Answer_Key.pdf"
+            selectedAnswerKeyFileName = PdfDocumentHelper.getFileNameFromUri(context, uri)
         }
     }
 
@@ -450,6 +452,48 @@ fun PdfToCbtSection(
                             singleLine = true
                         )
                     }
+                }
+            }
+        }
+
+        // AI OCR Status Pill
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (aiConfig.isConfigured) Color(0xFF1B5E20).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            border = BorderStroke(1.dp, if (aiConfig.isConfigured) Color(0xFF4CAF50).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        imageVector = if (aiConfig.isConfigured) Icons.Default.CheckCircle else Icons.Default.Info,
+                        contentDescription = null,
+                        tint = if (aiConfig.isConfigured) Color(0xFF4CAF50) else JeeOrange,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = if (aiConfig.isConfigured) "Gemini Vision OCR Active (High Accuracy)" else "Local Parser Active (Add Gemini Key for Vision OCR)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                TextButton(
+                    onClick = { showAiSettings = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = if (aiConfig.isConfigured) "Change Key" else "Add Key",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = JeeCyan
+                    )
                 }
             }
         }

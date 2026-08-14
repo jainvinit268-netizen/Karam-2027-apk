@@ -132,10 +132,26 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ---------------- Google Authentication Actions ----------------
-    fun signInWithGoogle(activityContext: Context) {
+    fun signInWithGoogle(activityContext: Context, overrideClientId: String? = null) {
         viewModelScope.launch {
-            authManager.signInWithGoogle(activityContext)
+            authManager.signInWithGoogle(activityContext, overrideClientId)
         }
+    }
+
+    fun signInDirectWithGmail(email: String, displayName: String? = null) {
+        authManager.signInDirectWithGmail(email, displayName)
+    }
+
+    fun saveOAuthClientId(clientId: String) {
+        authManager.saveCustomOAuthClientId(clientId)
+    }
+
+    fun getOAuthClientId(): String? {
+        return authManager.getCustomOAuthClientId()
+    }
+
+    fun clearOAuthClientId() {
+        authManager.clearCustomOAuthClientId()
     }
 
     fun signOutGoogle() {

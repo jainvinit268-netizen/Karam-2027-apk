@@ -231,6 +231,14 @@ fun DedicatedSignInDialog(
     val authState by viewModel.authState.collectAsState()
     val context = LocalContext.current
 
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Direct Gmail, 1: OAuth Key & One-Tap
+    var gmailInput by remember { mutableStateOf("jainvinit268@gmail.com") }
+    var nameInput by remember { mutableStateOf("Vinit Jain") }
+    
+    val savedOAuthKey = remember { viewModel.getOAuthClientId() ?: "" }
+    var oauthKeyInput by remember { mutableStateOf(savedOAuthKey) }
+    var oauthSavedNotice by remember { mutableStateOf(false) }
+
     // If user successfully logs in, dismiss dialog automatically
     LaunchedEffect(currentUser) {
         if (currentUser != null) {
@@ -251,12 +259,12 @@ fun DedicatedSignInDialog(
             tonalElevation = 8.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(vertical = 24.dp)
+                .fillMaxWidth(0.94f)
+                .padding(vertical = 16.dp)
                 .testTag("dedicated_sign_in_dialog")
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
@@ -264,12 +272,29 @@ fun DedicatedSignInDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Sign In",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(JeeNavyDark),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "K",
+                                color = JeeCyan,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Google Account Link",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(
                         onClick = {
                             viewModel.clearAuthError()
@@ -281,78 +306,206 @@ fun DedicatedSignInDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Brand Hero
-                Box(
+                // Tabs: Direct Gmail vs Custom OAuth Key
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    contentColor = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(JeeNavyDark),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
                 ) {
-                    Text(
-                        text = "K",
-                        color = JeeCyan,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = {
+                            Text(
+                                text = "Direct Gmail ID",
+                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        },
+                        icon = { Icon(Icons.Default.Mail, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = {
+                            Text(
+                                text = "OAuth Client Key",
+                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        },
+                        icon = { Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(16.dp)) }
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "KARAM 2027",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                if (selectedTab == 0) {
+                    // TAB 0: DIRECT GMAIL INPUT
+                    Text(
+                        text = "Enter your Google Gmail ID to instantly sync test history, Mistake Book, and forensic scores.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                Text(
-                    text = "Sign in to sync your tests and analysis.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                Spacer(modifier = Modifier.height(20.dp))
+                    OutlinedTextField(
+                        value = gmailInput,
+                        onValueChange = { gmailInput = it },
+                        label = { Text("Gmail Address") },
+                        placeholder = { Text("e.g. jainvinit268@gmail.com") },
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = JeeCyan) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("gmail_input_field")
+                    )
 
-                // Feature Highlights
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CloudDone, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("Automatic test & forensic report backup", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("Student / Aspirant Name") },
+                        placeholder = { Text("e.g. Vinit Jain") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = JeeOrange) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("name_input_field")
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (gmailInput.isNotBlank()) {
+                                viewModel.signInDirectWithGmail(gmailInput, nameInput)
+                            }
+                        },
+                        enabled = gmailInput.isNotBlank() && gmailInput.contains("@"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = JeeNavyDark,
+                            contentColor = JeeCyan
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("sign_in_direct_gmail_button")
+                    ) {
+                        Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Sign In with Gmail",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                } else {
+                    // TAB 1: OAUTH CLIENT ID BOX
+                    Text(
+                        text = "Paste your Google Cloud OAuth 2.0 Web Client ID to use Google One-Tap Sign In.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = oauthKeyInput,
+                        onValueChange = {
+                            oauthKeyInput = it
+                            oauthSavedNotice = false
+                        },
+                        label = { Text("Google OAuth Client ID") },
+                        placeholder = { Text("xxxxxx.apps.googleusercontent.com") },
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, tint = JeeCyan) },
+                        trailingIcon = {
+                            if (oauthKeyInput.isNotBlank()) {
+                                IconButton(onClick = { oauthKeyInput = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        singleLine = false,
+                        maxLines = 2,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("oauth_key_input_box")
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (oauthKeyInput.isNotBlank()) {
+                                    viewModel.saveOAuthClientId(oauthKeyInput)
+                                    oauthSavedNotice = true
+                                }
+                            },
+                            enabled = oauthKeyInput.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save Key")
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AutoGraph, contentDescription = null, tint = JeeOrange, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("Cross-device JEE analytics & Mistake Book", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("Secure on-device Google OAuth authentication", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+
+                        if (viewModel.getOAuthClientId() != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.clearOAuthClientId()
+                                    oauthKeyInput = ""
+                                    oauthSavedNotice = false
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Clear")
+                            }
                         }
                     }
+
+                    if (oauthSavedNotice) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "✓ OAuth Client ID saved successfully!",
+                            color = Color(0xFF2E7D32),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Sign In Button
+                    GoogleSignInButton(
+                        onClick = {
+                            val keyToUse = oauthKeyInput.takeIf { it.isNotBlank() } ?: viewModel.getOAuthClientId()
+                            viewModel.signInWithGoogle(context, keyToUse)
+                        },
+                        isLoading = authState is AuthState.Authenticating,
+                        text = "Sign In with Google OAuth"
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Sign In Button
-                GoogleSignInButton(
-                    onClick = {
-                        viewModel.signInWithGoogle(context)
-                    },
-                    isLoading = authState is AuthState.Authenticating,
-                    text = "Continue with Google"
-                )
 
                 if (authState is AuthState.Error) {
                     val errorMsg = (authState as AuthState.Error).message
@@ -394,10 +547,10 @@ fun DedicatedSignInDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
-                    text = "Google Sign-In is optional. PDF to CBT processing and offline testing work completely without signing in.",
+                    text = "Offline-ready: All CBT exams, PDF extraction, and test analytics function 100% locally.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     textAlign = TextAlign.Center

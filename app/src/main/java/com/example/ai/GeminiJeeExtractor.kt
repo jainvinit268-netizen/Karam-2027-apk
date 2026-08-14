@@ -109,63 +109,63 @@ object GeminiJeeExtractor {
                 )
             )
 
-            val prompt = """
-                You are a senior NTA JEE Main Examination Controller and PDF-to-CBT Extraction System.
-                Parse the provided Question Paper (text and/or page images) and Official Answer Key to generate a high-accuracy, full Computer Based Test (CBT).
-
-                STRICT EXTRACTION RULES:
-                1. DOCUMENT UNDERSTANDING & ZERO QUESTION MIXING:
-                   - Extract every question as a standalone, complete unit.
-                   - Keep all question text, diagrams descriptions, mathematical formulas, equations, tables, and options together.
-                   - NEVER mix Q(N) with Q(N+1). NEVER attach Q(N+1)'s options or diagram to Q(N).
-                2. SUBJECT & SECTION CLASSIFICATION:
-                   - Group questions strictly by subject: "PHYSICS", "CHEMISTRY", "MATHEMATICS".
-                   - For each subject:
-                     * "Section A": Single Choice Questions (MCQ) with 4 options (A, B, C, D) and +4 / -1 marking.
-                     * "Section B": Numerical Value Questions (NUMERICAL) where the answer is an integer or decimal number and +4 / -1 marking.
-                3. OFFICIAL ANSWER KEY MAPPING:
-                   - Carefully map the correct answer from the provided Answer Key for each question number.
-                   - For MCQ: Store exact correct option string ("A", "B", "C", or "D").
-                   - For Numerical: Store exact numerical value (e.g., "42", "2.5", "10", "-5").
-                4. RICH JEE METADATA:
-                   - Chapter Name (e.g. "Rotational Motion", "Thermodynamics", "Chemical Bonding", "Matrices & Determinants")
-                   - Core Concept tested
-                   - Difficulty: "EASY", "MEDIUM", or "HARD"
-                   - Detailed Step-by-Step Solution with all mathematical derivations and reasoning
-                   - Ideal Time in seconds (45 to 150 seconds)
-                   - YouTube search query for video solution (e.g. "JEE Main [Subject] [Chapter] [Core Concept] step by step solution")
-                   - isUncertain: boolean (set to true ONLY if question text or answer key was ambiguous)
-
-                Return ONLY a valid JSON object matching this exact schema:
-                {
-                   "testTitle": "$testTitle",
-                   "questions": [
-                      {
-                         "id": "PHY_01",
-                         "questionNumber": 1,
-                         "subject": "PHYSICS",
-                         "section": "Section A",
-                         "type": "MCQ",
-                         "questionText": "Complete question text with formulas...",
-                         "options": ["(A) Option A text", "(B) Option B text", "(C) Option C text", "(D) Option D text"],
-                         "correctAnswer": "B",
-                         "chapter": "Rotational Motion",
-                         "concept": "Pure Rolling on Incline",
-                         "difficulty": "MEDIUM",
-                         "solutionText": "Step 1: Write equation of motion...\nStep 2: ...\nFinal Answer: Option (B)",
-                         "idealTimeSeconds": 90,
-                         "youtubeSearchQuery": "JEE Main Physics Rotational Motion pure rolling solution",
-                         "isUncertain": false
-                      }
-                   ]
+            val prompt = buildString {
+                appendLine("You are an expert NTA JEE Main Examination Controller, OCR specialist, and PDF-to-CBT Extraction System.")
+                appendLine("Parse the provided Question Paper (text content and/or page images) and Official Answer Key to generate a high-accuracy, full Computer Based Test (CBT).")
+                appendLine()
+                appendLine("STRICT EXTRACTION RULES:")
+                appendLine("1. DOCUMENT UNDERSTANDING & ZERO QUESTION MIXING:")
+                appendLine("   - Extract every question exactly as present in the input document/images.")
+                appendLine("   - Keep all question text, mathematical formulas (LaTeX/Unicode), chemical equations, tables, and options together.")
+                appendLine("   - NEVER mix Q(N) with Q(N+1). NEVER attach Q(N+1)'s options or diagram to Q(N).")
+                appendLine("2. SUBJECT & SECTION CLASSIFICATION:")
+                appendLine("   - Group questions strictly by subject: 'PHYSICS', 'CHEMISTRY', 'MATHEMATICS'.")
+                appendLine("   - 'Section A': Single Choice Questions (MCQ) with 4 options (A, B, C, D) and +4 / -1 marking.")
+                appendLine("   - 'Section B': Numerical Value Questions (NUMERICAL) where answer is an integer/decimal and +4 / -1 marking.")
+                appendLine("3. OFFICIAL ANSWER KEY MAPPING:")
+                appendLine("   - Carefully map the correct answer from the provided Answer Key for each question number.")
+                appendLine("   - For MCQ: Store exact correct option string ('A', 'B', 'C', or 'D').")
+                appendLine("   - For Numerical: Store exact numerical value (e.g., '42', '2.5', '10', '-5').")
+                appendLine("4. RICH JEE METADATA:")
+                appendLine("   - Chapter Name, Core Concept, Difficulty ('EASY', 'MEDIUM', 'HARD'), Step-by-Step Solution, Ideal Time (45-150s), YouTube search query.")
+                appendLine()
+                appendLine("Return ONLY a valid JSON object matching this exact schema:")
+                appendLine("{")
+                appendLine("   \"testTitle\": \"$testTitle\",")
+                appendLine("   \"questions\": [")
+                appendLine("      {")
+                appendLine("         \"id\": \"PHY_01\",")
+                appendLine("         \"questionNumber\": 1,")
+                appendLine("         \"subject\": \"PHYSICS\",")
+                appendLine("         \"section\": \"Section A\",")
+                appendLine("         \"type\": \"MCQ\",")
+                appendLine("         \"questionText\": \"Complete question text with formulas...\",")
+                appendLine("         \"options\": [\"(A) Option A text\", \"(B) Option B text\", \"(C) Option C text\", \"(D) Option D text\"],")
+                appendLine("         \"correctAnswer\": \"B\",")
+                appendLine("         \"chapter\": \"Rotational Motion\",")
+                appendLine("         \"concept\": \"Moment of Inertia\",")
+                appendLine("         \"difficulty\": \"MEDIUM\",")
+                appendLine("         \"solutionText\": \"Step 1: Apply theorem of parallel axes... Final Answer: Option (B)\",")
+                appendLine("         \"idealTimeSeconds\": 90,")
+                appendLine("         \"youtubeSearchQuery\": \"JEE Main Physics Rotational Motion moment of inertia solution\",")
+                appendLine("         \"isUncertain\": false")
+                appendLine("      }")
+                appendLine("   ]")
+                appendLine("}")
+                appendLine()
+                if (questionPaperContent.isNotBlank()) {
+                    appendLine("--- QUESTION PAPER TEXT SOURCE ---")
+                    appendLine(questionPaperContent)
+                } else if (pageImagesBase64.isNotEmpty()) {
+                    appendLine("--- NOTE ON INPUT ---")
+                    appendLine("The question paper is provided in the attached high-resolution document page images. Perform deep visual OCR to extract every single question and option from these pages.")
                 }
-
-                --- QUESTION PAPER SOURCE ---
-                $questionPaperContent
-
-                --- OFFICIAL ANSWER KEY SOURCE ---
-                $answerKeyContent
-            """.trimIndent()
+                if (answerKeyContent.isNotBlank()) {
+                    appendLine()
+                    appendLine("--- OFFICIAL ANSWER KEY SOURCE ---")
+                    appendLine(answerKeyContent)
+                }
+            }
 
             onProgress(
                 ProcessingProgress(
@@ -182,8 +182,8 @@ object GeminiJeeExtractor {
                         val partsArray = JSONArray().apply {
                             put(JSONObject().apply { put("text", prompt) })
 
-                            // If page images are provided, attach up to 4 pages as inline_data
-                            for (i in 0 until minOf(pageImagesBase64.size, 4)) {
+                            // If page images are provided, attach up to 6 pages as inline_data
+                            for (i in 0 until minOf(pageImagesBase64.size, 6)) {
                                 val imgBase64 = pageImagesBase64[i]
                                 if (imgBase64.isNotBlank()) {
                                     val inlineDataObj = JSONObject().apply {
@@ -203,6 +203,7 @@ object GeminiJeeExtractor {
                 val genConfig = JSONObject().apply {
                     put("temperature", 0.1)
                     put("topP", 0.95)
+                    put("maxOutputTokens", 8192)
                     val responseFormat = JSONObject().apply {
                         put("mimeType", "application/json")
                     }
@@ -442,10 +443,16 @@ object GeminiJeeExtractor {
         // 2. Identify Subject Blocks
         val cleanPaper = questionPaperContent.trim()
         
-        // Split by question boundaries: "Q1.", "Q2.", "1.", "Question 1", etc.
-        val qBlockRegex = Regex("""(?:(?:^|\n)\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q|Question)?\s*(\d+)[\.\:\-\)])(.*?)(?=(?:(?:\n\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q|Question)?\s*\d+[\.\:\-\)])|$))""", RegexOption.DOT_MATCHES_ALL)
+        // Pattern 1: Standard NTA Q1. / Question 1 / [PHYSICS] Q1. / 1.
+        val qBlockRegex = Regex("""(?:(?:^|\n)\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q\.?|Question|Problem)?\s*(\d+)[\.\:\-\)])(.*?)(?=(?:(?:\n\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q\.?|Question|Problem)?\s*\d+[\.\:\-\)])|$))""", RegexOption.DOT_MATCHES_ALL)
 
-        val matches = qBlockRegex.findAll(cleanPaper).toList()
+        var matches = qBlockRegex.findAll(cleanPaper).toList()
+
+        // Pattern 2 fallback: Numbered lines "1. " or "1) "
+        if (matches.isEmpty() && cleanPaper.isNotBlank()) {
+            val altRegex = Regex("""(?:(?:^|\n)\s*(\d+)[\.\)]\s+)(.*?)(?=(?:(?:\n\s*\d+[\.\)]\s+)|$))""", RegexOption.DOT_MATCHES_ALL)
+            matches = altRegex.findAll(cleanPaper).toList()
+        }
 
         if (matches.isNotEmpty()) {
             for (m in matches) {
@@ -464,7 +471,7 @@ object GeminiJeeExtractor {
                 val isNumerical = fullText.contains("SECTION B", ignoreCase = true) ||
                         fullText.contains("NUMERICAL", ignoreCase = true) ||
                         (qNum in listOf(21, 22, 23, 24, 25, 46, 47, 48, 49, 50, 71, 72, 73, 74, 75)) ||
-                        (!fullText.contains("(A)") && !fullText.contains("(1)"))
+                        (!fullText.contains("(A)") && !fullText.contains("(1)") && !fullText.contains("(a)"))
 
                 val type = if (isNumerical) QuestionType.NUMERICAL else QuestionType.MCQ
                 val section = if (isNumerical) "Section B (Numerical)" else "Section A (MCQ)"
@@ -473,13 +480,13 @@ object GeminiJeeExtractor {
                 var questionBody = fullText
 
                 if (!isNumerical) {
-                    // Extract (A), (B), (C), (D) or (1), (2), (3), (4)
-                    val optRegex = Regex("""\(([A-D1-4])\)\s*([^(\n]+)""")
+                    // Extract (A), (B), (C), (D) or (1), (2), (3), (4) or A), B), C), D)
+                    val optRegex = Regex("""(?:[\(\[]?([A-Da-d1-4])[\)\]\.]\s*)([^\(\[\n]+)""")
                     val optMatches = optRegex.findAll(fullText).toList()
                     if (optMatches.size >= 2) {
                         questionBody = fullText.substring(0, optMatches[0].range.first).trim()
                         for (opt in optMatches) {
-                            val label = when (opt.groupValues[1]) {
+                            val label = when (opt.groupValues[1].uppercase()) {
                                 "1" -> "A"
                                 "2" -> "B"
                                 "3" -> "C"
@@ -525,11 +532,20 @@ object GeminiJeeExtractor {
             }
         }
 
+        val errMsg = if (questions.isEmpty()) {
+            if (cleanPaper.isBlank()) {
+                "No readable text extracted from document. Please configure your Gemini API Key in settings for visual OCR or paste question text."
+            } else {
+                "Could not detect question numbers (e.g. Q1., 1.) in the provided text."
+            }
+        } else null
+
         return ExtractionResult(
             success = questions.isNotEmpty(),
             testTitle = testTitle,
             questions = questions,
-            flaggedQuestions = flagged
+            flaggedQuestions = flagged,
+            errorMessage = errMsg
         )
     }
 }

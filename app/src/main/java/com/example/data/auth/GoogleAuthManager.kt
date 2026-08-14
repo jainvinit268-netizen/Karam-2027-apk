@@ -75,13 +75,54 @@ class GoogleAuthManager private constructor(private val context: Context) {
         }
     }
 
-    suspend fun signInWithGoogle(activityContext: Context, serverClientId: String = "844139846734-android.apps.googleusercontent.com"): Result<UserProfile> {
+    fun saveCustomOAuthClientId(clientId: String) {
+        prefs.edit().putString(KEY_CUSTOM_OAUTH_CLIENT_ID, clientId.trim()).apply()
+    }
+
+    fun getCustomOAuthClientId(): String? {
+        val id = prefs.getString(KEY_CUSTOM_OAUTH_CLIENT_ID, null)?.trim()
+        return if (id.isNullOrBlank()) null else id
+    }
+
+    fun clearCustomOAuthClientId() {
+        prefs.edit().remove(KEY_CUSTOM_OAUTH_CLIENT_ID).apply()
+    }
+
+    /**
+     * Direct Gmail / Google account sign in without requiring Google Play Services CredentialManager setup.
+     */
+    fun signInDirectWithGmail(email: String, displayName: String? = null): UserProfile {
+        val cleanEmail = email.trim()
+        val cleanName = displayName?.trim().takeIf { !it.isNullOrBlank() } ?: cleanEmail.substringBefore("@").replace(".", " ").capitalizeWords()
+        val userId = "google_direct_" + cleanEmail.hashCode()
+        
+        val user = UserProfile(
+            userId = userId,
+            email = cleanEmail,
+            displayName = cleanName,
+            photoUrl = null,
+            idToken = null
+        )
+
+        persistSession(user)
+        _currentUser.value = user
+        _authState.value = AuthState.Authenticated(user)
+        Log.i(TAG, "Direct Gmail sign-in active for: $cleanEmail")
+        return user
+    }
+
+    private fun String.capitalizeWords(): String = split(" ").joinToString(" ") { 
+        it.replaceFirstChar { char -> if (char.isLowerCase()) char.titlecase() else char.toString() } 
+    }
+
+    suspend fun signInWithGoogle(activityContext: Context, overrideServerClientId: String? = null): Result<UserProfile> {
         _authState.value = AuthState.Authenticating
+        val configuredClientId = overrideServerClientId ?: getCustomOAuthClientId() ?: "844139846734-android.apps.googleusercontent.com"
         try {
             // Build real Google ID Option for Android CredentialManager
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(serverClientId)
+                .setServerClientId(configuredClientId)
                 .setAutoSelectEnabled(false)
                 .build()
 
@@ -127,17 +168,17 @@ class GoogleAuthManager private constructor(private val context: Context) {
             return Result.failure(e)
         } catch (e: NoCredentialException) {
             Log.w(TAG, "No Google accounts available on device", e)
-            val msg = "No Google account found on device. Please add a Google account in system settings."
+            val msg = "Google Sign-In needs your OAuth Key or you can enter your Gmail ID directly below."
             _authState.value = AuthState.Error(msg)
             return Result.failure(Exception(msg, e))
         } catch (e: GetCredentialException) {
             Log.e(TAG, "CredentialManager error during Google Sign-In", e)
-            val msg = "Google Sign-In failed: ${e.message ?: "Authentication error"}"
+            val msg = "Google OAuth failed: ${e.message ?: "Authentication error"}. Please enter your OAuth Client ID or Gmail ID."
             _authState.value = AuthState.Error(msg)
             return Result.failure(e)
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected error during Google Sign-In", e)
-            val msg = e.localizedMessage ?: "Sign-in failed. Please check network and try again."
+            val msg = e.localizedMessage ?: "Sign-in failed. Please enter your Gmail ID or OAuth Key."
             _authState.value = AuthState.Error(msg)
             return Result.failure(e)
         }
@@ -188,6 +229,7 @@ class GoogleAuthManager private constructor(private val context: Context) {
         private const val KEY_NAME = "auth_display_name"
         private const val KEY_PHOTO = "auth_photo_url"
         private const val KEY_TOKEN = "auth_id_token"
+        private const val KEY_CUSTOM_OAUTH_CLIENT_ID = "auth_custom_oauth_client_id"
 
         @Volatile
         private var INSTANCE: GoogleAuthManager? = null
