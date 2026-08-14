@@ -75,7 +75,7 @@ object GeminiJeeExtractor {
             Log.w(TAG, "Gemini API key is not configured. Falling back to local algorithmic parser.")
             onProgress(
                 ProcessingProgress(
-                    step = ProcessingStep.DETECTING_LAYOUT,
+                    step = ProcessingStep.ANALYZING_PDF,
                     progressPercent = 30,
                     message = "No Gemini API Key found. Parsing with local layout engine...",
                     totalPages = totalPages
@@ -102,7 +102,7 @@ object GeminiJeeExtractor {
         try {
             onProgress(
                 ProcessingProgress(
-                    step = ProcessingStep.DETECTING_LAYOUT,
+                    step = ProcessingStep.ANALYZING_PDF,
                     progressPercent = 25,
                     message = "Analyzing document structure & question blocks ($totalPages pages)...",
                     totalPages = totalPages

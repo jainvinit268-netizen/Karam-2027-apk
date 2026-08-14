@@ -2,7 +2,6 @@ package com.example.ai
 
 import com.example.data.ai.AiConnectionStatus
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 class LocalLayoutAIProvider : AIProvider {
@@ -27,40 +26,21 @@ class LocalLayoutAIProvider : AIProvider {
 
         onProgress(
             ProcessingProgress(
-                step = ProcessingStep.READING_PDF,
-                progressPercent = 15,
-                message = "Parsing extracted document text & structure...",
-                totalPages = params.totalPages
+                step = ProcessingStep.ANALYZING_PDF,
+                progressPercent = 30,
+                message = "Parsing document text tokens & identifying question blocks...",
+                totalPages = params.totalPages,
+                pdfType = params.pdfType
             )
         )
-        delay(150)
 
         onProgress(
             ProcessingProgress(
                 step = ProcessingStep.DETECTING_QUESTIONS,
-                progressPercent = 40,
-                message = "Identifying question boundaries and subject blocks...",
-                totalPages = params.totalPages
-            )
-        )
-        delay(150)
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.READING_ANSWER_KEY,
-                progressPercent = 65,
-                message = "Parsing Official Answer Key tokens & keys...",
-                totalPages = params.totalPages
-            )
-        )
-        delay(150)
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.MAPPING_ANSWERS,
-                progressPercent = 85,
-                message = "Mapping Question ↔ Official Answer pairs...",
-                totalPages = params.totalPages
+                progressPercent = 50,
+                message = "Detecting question boundaries, subject headers & option markers...",
+                totalPages = params.totalPages,
+                pdfType = params.pdfType
             )
         )
 
@@ -72,14 +52,36 @@ class LocalLayoutAIProvider : AIProvider {
 
         onProgress(
             ProcessingProgress(
-                step = ProcessingStep.BUILDING_CBT,
-                progressPercent = 95,
-                message = "Finalizing NTA CBT question structures...",
+                step = ProcessingStep.READING_ANSWER_KEY,
+                progressPercent = 70,
+                message = "Parsing Official Answer Key tokens & keys...",
                 totalPages = params.totalPages,
-                questionsDetected = rawResult.questions.size
+                questionsDetected = rawResult.questions.size,
+                pdfType = params.pdfType
             )
         )
-        delay(100)
+
+        onProgress(
+            ProcessingProgress(
+                step = ProcessingStep.MAPPING_ANSWERS,
+                progressPercent = 85,
+                message = "Mapping Question ↔ Official Answer pairs (${rawResult.questions.size} mapped)...",
+                totalPages = params.totalPages,
+                questionsDetected = rawResult.questions.size,
+                pdfType = params.pdfType
+            )
+        )
+
+        onProgress(
+            ProcessingProgress(
+                step = ProcessingStep.VALIDATING,
+                progressPercent = 92,
+                message = "Validating numbering, duplicates, and option integrity...",
+                totalPages = params.totalPages,
+                questionsDetected = rawResult.questions.size,
+                pdfType = params.pdfType
+            )
+        )
 
         val elapsed = (System.currentTimeMillis() - startTime) / 1000
         val validatedCount = rawResult.questions.count { it.correctAnswer.isNotBlank() }
@@ -95,7 +97,8 @@ class LocalLayoutAIProvider : AIProvider {
             elapsedSeconds = elapsed,
             diagramsCount = params.pageImagesBase64.size,
             validatedCount = validatedCount,
-            ocrWarningsCount = rawResult.flaggedQuestions.size
+            ocrWarningsCount = rawResult.flaggedQuestions.size,
+            pdfType = params.pdfType
         )
     }
 }

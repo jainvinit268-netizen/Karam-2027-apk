@@ -33,7 +33,7 @@ class GeminiAIProvider(
         if (apiKey.isNullOrBlank()) {
             onProgress(
                 ProcessingProgress(
-                    step = ProcessingStep.DETECTING_LAYOUT,
+                    step = ProcessingStep.ANALYZING_PDF,
                     progressPercent = 30,
                     message = "No Gemini API Key detected. Using high-precision local layout parser...",
                     totalPages = params.totalPages

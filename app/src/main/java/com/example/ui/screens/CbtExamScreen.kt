@@ -20,11 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionStatus
 import com.example.data.model.QuestionType
@@ -294,6 +298,8 @@ private fun QuestionContentView(
     onOptionSelected: (String) -> Unit,
     onNumericalEntered: (String) -> Unit
 ) {
+    var showZoomDialog by remember(question.id) { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -355,19 +361,113 @@ private fun QuestionContentView(
             }
         }
 
-        // Question Statement Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
-            border = CardDefaults.outlinedCardBorder()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = question.questionText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    lineHeight = 24.sp
-                )
+        // ORIGINAL PDF VISUAL CROP (Primary display)
+        if (!question.imageUrl.isNullOrBlank()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, JeeCyan.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.CropOriginal,
+                                contentDescription = null,
+                                tint = JeeNavyDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Original Question Visual (from PDF)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = JeeNavyDark
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showZoomDialog = true },
+                            modifier = Modifier.size(28.dp).testTag("btn_zoom_question_image")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomIn,
+                                contentDescription = "Zoom In",
+                                tint = JeeNavyDark
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AsyncImage(
+                        model = question.imageUrl,
+                        contentDescription = "Question ${question.questionNumber} original PDF crop",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showZoomDialog = true }
+                            .testTag("question_visual_image")
+                    )
+                }
+            }
+
+            if (showZoomDialog) {
+                Dialog(
+                    onDismissRequest = { showZoomDialog = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.Black.copy(alpha = 0.95f)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = question.imageUrl,
+                                contentDescription = "Zoomed Question Image",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp)
+                            )
+
+                            IconButton(
+                                onClick = { showZoomDialog = false },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(24.dp)
+                                    .background(Color.White.copy(alpha = 0.3f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Question Statement Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = question.questionText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        lineHeight = 24.sp
+                    )
+                }
             }
         }
 

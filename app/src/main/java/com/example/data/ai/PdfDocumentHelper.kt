@@ -8,13 +8,14 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
+import com.example.ai.PdfSourceType
+import com.example.ai.ProcessingStep
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 
@@ -25,7 +26,8 @@ object PdfDocumentHelper {
         val fileName: String,
         val extractedText: String,
         val pageCount: Int,
-        val base64Images: List<String> = emptyList()
+        val base64Images: List<String> = emptyList(),
+        val pdfType: PdfSourceType = PdfSourceType.NATIVE_TEXT
     )
 
     /**
@@ -55,18 +57,20 @@ object PdfDocumentHelper {
 
     /**
      * Reads and extracts content from a user-uploaded PDF or text/image Uri.
+     * Reports live, incremental progress so the user sees real active work.
      */
     suspend fun extractContentFromUri(
         context: Context,
         uri: Uri,
-        maxPagesToRender: Int = 8
+        maxPagesToRender: Int = 6,
+        onProgress: (step: ProcessingStep, percent: Int, message: String, pagesDone: Int, totalPages: Int) -> Unit = { _, _, _, _, _ -> }
     ): ExtractedDocument = withContext(Dispatchers.IO) {
         val fileName = getFileNameFromUri(context, uri)
-        val mimeType = context.contentResolver.getType(uri) ?: ""
-        
-        Log.d(TAG, "Processing Uri: $uri, type: $mimeType, fileName: $fileName")
+        Log.d(TAG, "Starting extraction for: $fileName")
 
-        // 1. Check direct text if it's text/plain
+        onProgress(ProcessingStep.ANALYZING_PDF, 5, "Analysing document format for $fileName...", 0, 0)
+
+        // 1. Check direct plain text file
         var directText = ""
         try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
@@ -77,14 +81,16 @@ object PdfDocumentHelper {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Direct text reading check skipped: ${e.message}")
+            Log.w(TAG, "Direct plain-text check skipped: ${e.message}")
         }
 
         if (directText.isNotBlank()) {
+            onProgress(ProcessingStep.ANALYZING_PDF, 15, "Direct plain text extracted (${directText.lines().size} lines)", 1, 1)
             return@withContext ExtractedDocument(
                 fileName = fileName,
                 extractedText = directText,
-                pageCount = 1
+                pageCount = 1,
+                pdfType = PdfSourceType.NATIVE_TEXT
             )
         }
 
@@ -93,77 +99,125 @@ object PdfDocumentHelper {
         var pageCount = 0
         val base64Images = mutableListOf<String>()
         val textBuffer = StringBuilder()
+        var detectedPdfType = PdfSourceType.NATIVE_TEXT
 
         try {
+            onProgress(ProcessingStep.ANALYZING_PDF, 8, "Reading PDF document streams...", 0, 0)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
             }
 
-            // Extract text tokens from PDF binary stream (including Flate streams)
+            // Extract native text tokens from PDF binary stream
+            onProgress(ProcessingStep.DETECTING_PDF_TYPE, 12, "Detecting PDF Type & stream encoding...", 0, 0)
             val rawPdfBytes = tempFile.readBytes()
             val extractedTokens = extractReadableTextFromPdfBytes(rawPdfBytes)
             if (extractedTokens.isNotBlank()) {
                 textBuffer.append(extractedTokens)
             }
 
-            // Render PDF pages as high-clarity Bitmaps for multimodal OCR & vision
+            // Determine if Native Text or Scanned
+            detectedPdfType = if (textBuffer.length > 200 && textBuffer.count { it.isLetterOrDigit() } > 100) {
+                PdfSourceType.NATIVE_TEXT
+            } else if (textBuffer.length > 50) {
+                PdfSourceType.MIXED
+            } else {
+                PdfSourceType.SCANNED_IMAGE
+            }
+
+            onProgress(
+                ProcessingStep.DETECTING_PDF_TYPE,
+                15,
+                "Identified as: ${detectedPdfType.displayName}",
+                0,
+                0
+            )
+
+            // Open PdfRenderer for page count and high-res rendering
             val pfd = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
             val renderer = PdfRenderer(pfd)
             pageCount = renderer.pageCount
 
-            val pagesToProcess = minOf(pageCount, maxPagesToRender)
+            onProgress(
+                ProcessingStep.RENDERING_PAGES,
+                18,
+                "Rendering pages (Total $pageCount pages detected)...",
+                0,
+                pageCount
+            )
+
+            // If scanned/image PDF, render necessary pages for OCR/vision
+            val pagesToProcess = if (detectedPdfType == PdfSourceType.SCANNED_IMAGE) {
+                minOf(pageCount, maxPagesToRender)
+            } else {
+                minOf(pageCount, 4) // Only sample pages if native text is already available
+            }
+
             for (i in 0 until pagesToProcess) {
+                val pageNum = i + 1
+                val stepPercent = 18 + ((pageNum * 12) / pagesToProcess)
+                onProgress(
+                    ProcessingStep.RENDERING_PAGES,
+                    stepPercent,
+                    "Rendering page $pageNum of $pageCount...",
+                    pageNum,
+                    pageCount
+                )
+
                 val page = renderer.openPage(i)
-                // Optimize width to 1080px for fast generation & crisp math formula OCR
-                val scale = if (page.width > 0) (1080f / page.width.toFloat()).coerceIn(1.0f, 2.0f) else 1.5f
+                val targetWidth = 1080
+                val scale = if (page.width > 0) (targetWidth.toFloat() / page.width.toFloat()).coerceIn(1.0f, 2.0f) else 1.5f
                 val width = (page.width * scale).toInt()
                 val height = (page.height * scale).toInt()
-                
+
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 bitmap.eraseColor(android.graphics.Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 page.close()
 
-                // Fast JPEG compression
                 val outputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 82, outputStream)
                 val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
                 base64Images.add(base64)
                 bitmap.recycle()
             }
+
             renderer.close()
             pfd.close()
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error rendering PDF: ${e.message}", e)
+            Log.e(TAG, "Error processing PDF: ${e.message}", e)
         } finally {
             try { tempFile.delete() } catch (_: Exception) {}
         }
 
         val finalText = textBuffer.toString().trim()
+        Log.d(TAG, "Completed extraction: pages=$pageCount, textLength=${finalText.length}, type=$detectedPdfType")
+
         ExtractedDocument(
             fileName = fileName,
             extractedText = finalText,
             pageCount = pageCount,
-            base64Images = base64Images
+            base64Images = base64Images,
+            pdfType = detectedPdfType
         )
     }
 
     /**
      * Extracts readable text strings and stream chunks from a PDF file.
-     * Handles both uncompressed text operators and FlateDecode compressed streams.
+     * Handles both uncompressed text operators and FlateDecode compressed streams safely.
      */
     private fun extractReadableTextFromPdfBytes(bytes: ByteArray): String {
         val sb = StringBuilder()
         val text = String(bytes, Charsets.ISO_8859_1)
 
-        // 1. Check BT ... ET blocks
+        // 1. Direct BT ... ET blocks
         val btEtRegex = Regex("""BT(.*?)ET""", RegexOption.DOT_MATCHES_ALL)
         val matches = btEtRegex.findAll(text)
 
         var foundStructuredText = false
-        for (match in matches) {
+        for (match in matches.take(500)) {
             val block = match.groupValues[1]
             val parenRegex = Regex("""\((.*?)\)\s*T[jJ]""")
             val parenMatches = parenRegex.findAll(block)
@@ -189,7 +243,8 @@ object PdfDocumentHelper {
                 val streamEndTag = "endstream".toByteArray(Charsets.ISO_8859_1)
 
                 var index = 0
-                while (index < bytes.size - 20) {
+                var decompressedStreams = 0
+                while (index < bytes.size - 20 && decompressedStreams < 60) {
                     var sStart = indexOf(bytes, streamStartTag, index)
                     var headerLen = streamStartTag.size
                     if (sStart == -1) {
@@ -203,16 +258,16 @@ object PdfDocumentHelper {
                     if (sEnd == -1) break
 
                     val streamLen = sEnd - dataStart
-                    if (streamLen in 10..500000) {
+                    if (streamLen in 10..300000) {
                         try {
                             val inflater = Inflater(false)
                             val bais = ByteArrayInputStream(bytes, dataStart, streamLen)
                             val iis = InflaterInputStream(bais, inflater)
                             val unzipped = iis.readBytes()
                             val unzippedStr = String(unzipped, Charsets.ISO_8859_1)
-                            
+
                             val innerMatches = btEtRegex.findAll(unzippedStr)
-                            for (m in innerMatches) {
+                            for (m in innerMatches.take(100)) {
                                 val parenMatches = Regex("""\((.*?)\)\s*T[jJ]""").findAll(m.groupValues[1])
                                 for (pm in parenMatches) {
                                     val token = pm.groupValues[1]
@@ -223,6 +278,7 @@ object PdfDocumentHelper {
                                 }
                                 sb.append("\n")
                             }
+                            decompressedStreams++
                         } catch (_: Exception) {}
                     }
                     index = sEnd + streamEndTag.size
@@ -240,7 +296,7 @@ object PdfDocumentHelper {
         val asciiRegex = Regex("""[A-Za-z0-9\s\.\,\:\;\(\)\+\-\*\/\=\>\<\?\!\@\#\$\%\^\&\_\{\}\[\]\~]{4,}""")
         val asciiMatches = asciiRegex.findAll(text)
         val fallbackSb = StringBuilder()
-        for (m in asciiMatches) {
+        for (m in asciiMatches.take(2000)) {
             val segment = m.value.trim()
             if (segment.length >= 4 && !segment.startsWith("stream") && !segment.startsWith("endstream") && !segment.startsWith("xref")) {
                 fallbackSb.append(segment).append("\n")
@@ -268,4 +324,3 @@ object PdfDocumentHelper {
             .joinToString("\n")
     }
 }
-

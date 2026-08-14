@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.PdfSourceType
 import com.example.data.ai.PdfDocumentHelper
 import com.example.data.model.Subject
 import com.example.ui.theme.*
@@ -572,10 +573,15 @@ fun PdfToCbtSection(
                             )
                         }
 
+                        val elapsedMin = conversionState.elapsedSeconds / 60
+                        val elapsedSec = conversionState.elapsedSeconds % 60
+                        val timeFormatted = String.format("%02d:%02d", elapsedMin, elapsedSec)
+
                         Text(
-                            text = "${conversionState.elapsedSeconds}s elapsed",
+                            text = "$timeFormatted elapsed",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Bold,
+                            color = JeeCyan
                         )
                     }
 
@@ -594,18 +600,50 @@ fun PdfToCbtSection(
                         )
                     }
 
-                    Text(
-                        text = conversionState.progressMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = conversionState.progressMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        if (conversionState.estimatedRemainingSeconds != null) {
+                            Text(
+                                text = "~${conversionState.estimatedRemainingSeconds}s remaining",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Metadata Pill Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val currentPdfType = conversionState.pdfType
+                            if (currentPdfType != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = JeeCyan.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = currentPdfType.name.replace("_", " "),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = JeeCyan,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             if (conversionState.totalPages > 0) {
                                 Text(
                                     text = "Pages: ${conversionState.pagesProcessed}/${conversionState.totalPages}",
@@ -632,6 +670,55 @@ fun PdfToCbtSection(
                             Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Cancel", fontSize = 12.sp)
+                        }
+                    }
+
+                    // Stall Warning Banner
+                    if (conversionState.isSlowOrStalled) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = JeeOrange.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, JeeOrange.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.HourglassBottom, contentDescription = null, tint = JeeOrange, modifier = Modifier.size(16.dp))
+                                    Text(
+                                        text = "Processing is taking longer than expected",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = JeeOrange
+                                    )
+                                }
+                                Text(
+                                    text = "High-resolution rendering or deep layout analysis is in progress.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.continueWaiting() },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("Continue Waiting", fontSize = 11.sp)
+                                    }
+                                    Button(
+                                        onClick = { viewModel.retryConversion() },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = JeeOrange, contentColor = Color.Black)
+                                    ) {
+                                        Text("Retry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
