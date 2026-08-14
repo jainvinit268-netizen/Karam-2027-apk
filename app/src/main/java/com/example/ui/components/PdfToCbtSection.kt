@@ -133,7 +133,7 @@ fun PdfToCbtSection(
                     }
 
                     IconButton(
-                        onClick = { showAiSettings = !showAiSettings },
+                        onClick = { showAiSettings = true },
                         modifier = Modifier.testTag("btn_toggle_ai_settings")
                     ) {
                         Icon(
@@ -144,46 +144,11 @@ fun PdfToCbtSection(
                     }
                 }
 
-                // AI Key Config Drawer
-                AnimatedVisibility(visible = showAiSettings) {
-                    var apiKeyInput by remember { mutableStateOf("") }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Gemini AI Configuration",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { apiKeyInput = it },
-                            label = { Text("Gemini API Key (Optional)") },
-                            placeholder = { Text("AIzaSy...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Button(
-                                onClick = {
-                                    viewModel.saveGeminiApiKey(apiKeyInput.trim())
-                                    showAiSettings = false
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = JeeCyan)
-                            ) {
-                                Text("Save Key", color = Color.Black, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                if (showAiSettings) {
+                    AiSettingsDialog(
+                        viewModel = viewModel,
+                        onDismiss = { showAiSettings = false }
+                    )
                 }
             }
         }
@@ -537,43 +502,154 @@ fun PdfToCbtSection(
         if (conversionState.isProcessing) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, JeeCyan.copy(alpha = 0.5f))
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = JeeCyan)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = JeeCyan
+                            )
+                            Text(
+                                text = conversionState.currentStep.displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Text(
+                            text = "${conversionState.elapsedSeconds}s elapsed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (conversionState.progressPercent > 0) {
+                        LinearProgressIndicator(
+                            progress = { conversionState.progressPercent / 100f },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = JeeCyan,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = JeeCyan,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    }
+
                     Text(
                         text = conversionState.progressMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (conversionState.totalPages > 0) {
+                                Text(
+                                    text = "Pages: ${conversionState.pagesProcessed}/${conversionState.totalPages}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (conversionState.questionsDetected > 0) {
+                                Text(
+                                    text = "Detected: ${conversionState.questionsDetected} Qs",
+                                    fontSize = 11.sp,
+                                    color = JeeCyan,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.cancelConversion() },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cancel", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }
 
-        // Error Banner
+        // Error Banner with Retry
         if (conversionState.errorMessage != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = NtaRed.copy(alpha = 0.15f)),
-                border = BorderStroke(1.dp, NtaRedLight)
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = NtaRedLight)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Text(
+                            text = "Conversion Failed",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                    }
+
                     Text(
                         text = conversionState.errorMessage!!,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodySmall
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showAiSettings = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("AI Settings", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { viewModel.retryConversion() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -596,18 +672,61 @@ fun PdfToCbtSection(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = NtaGreenLight)
-                        Text(
-                            text = "CBT Generation Complete!",
-                            fontWeight = FontWeight.Bold,
-                            color = NtaGreenLight,
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Column {
+                            Text(
+                                text = "CBT Generation Complete!",
+                                fontWeight = FontWeight.Bold,
+                                color = NtaGreenLight,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "${conversionState.extractedQuestionsCount} Questions • Official Answers Mapped • ${conversionState.elapsedSeconds}s",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
-                    Text(
-                        text = "Successfully extracted ${conversionState.extractedQuestionsCount} questions and mapped official answers.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    // Subject Chips Breakdown
+                    val phyCount = conversionState.extractedQuestions.count { it.subject == Subject.PHYSICS }
+                    val cheCount = conversionState.extractedQuestions.count { it.subject == Subject.CHEMISTRY }
+                    val matCount = conversionState.extractedQuestions.count { it.subject == Subject.MATHEMATICS }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Physics", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$phyCount Qs", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = JeeCyan)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Chemistry", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$cheCount Qs", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = JeeOrange)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Maths", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$matCount Qs", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NtaGreenLight)
+                            }
+                        }
+                    }
 
                     if (!conversionState.aiStatusMessage.isNullOrBlank()) {
                         Text(

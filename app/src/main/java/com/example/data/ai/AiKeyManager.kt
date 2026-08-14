@@ -147,7 +147,7 @@ class AiKeyManager private constructor(private val context: Context) {
 
         val startTime = System.currentTimeMillis()
         try {
-            val testUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$keyToTest"
+            val testUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$keyToTest"
             
             val testPayload = JSONObject().apply {
                 val contents = JSONArray().apply {

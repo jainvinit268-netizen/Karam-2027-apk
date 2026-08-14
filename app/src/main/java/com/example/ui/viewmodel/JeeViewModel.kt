@@ -4,7 +4,15 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.AIProvider
+import com.example.ai.AIProviderType
+import com.example.ai.DocumentProcessingParams
+import com.example.ai.DocumentProcessingResult
+import com.example.ai.GeminiAIProvider
 import com.example.ai.GeminiJeeExtractor
+import com.example.ai.LocalLayoutAIProvider
+import com.example.ai.ProcessingProgress
+import com.example.ai.ProcessingStep
 import com.example.data.ai.AiConfigState
 import com.example.data.ai.AiConnectionStatus
 import com.example.data.ai.AiKeyManager
@@ -23,6 +31,7 @@ import com.example.data.model.StudentResponse
 import com.example.data.model.Subject
 import com.example.data.repository.JeeRepository
 import com.example.data.sample.SampleJeePapers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,14 +53,24 @@ sealed interface AppScreen {
 
 data class ConversionUiState(
     val isProcessing: Boolean = false,
+    val currentStep: ProcessingStep = ProcessingStep.READING_PDF,
+    val progressPercent: Int = 0,
     val progressMessage: String = "",
+    val pagesProcessed: Int = 0,
+    val totalPages: Int = 0,
+    val questionsDetected: Int = 0,
+    val elapsedSeconds: Long = 0,
+    val estimatedRemainingSeconds: Int? = null,
     val errorMessage: String? = null,
     val extractedQuestionsCount: Int = 0,
+    val validatedCount: Int = 0,
+    val diagramsCount: Int = 0,
     val flaggedCount: Int = 0,
     val newlyCreatedTestId: String? = null,
     val aiStatusMessage: String? = null,
     val extractedQuestions: List<QuestionItem> = emptyList(),
-    val isReviewModalOpen: Boolean = false
+    val isReviewModalOpen: Boolean = false,
+    val providerUsed: AIProviderType? = null
 )
 
 data class ExamUiState(
@@ -157,7 +176,28 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
         _currentScreen.value = screen
     }
 
+    private val geminiAiProvider = GeminiAIProvider(application)
+    private val localAiProvider = LocalLayoutAIProvider()
+    private var conversionJob: Job? = null
+    private var conversionTickerJob: Job? = null
+    private var lastConversionParams: DocumentProcessingParams? = null
+    private var lastResolvedPdfName: String = "Uploaded_Paper.pdf"
+
     // ---------------- PDF & Answer Key AI Conversion ----------------
+    fun cancelConversion() {
+        conversionJob?.cancel()
+        conversionTickerJob?.cancel()
+        _conversionState.value = _conversionState.value.copy(
+            isProcessing = false,
+            errorMessage = "Processing was cancelled by user."
+        )
+    }
+
+    fun retryConversion() {
+        val params = lastConversionParams ?: return
+        executeDocumentConversion(params, lastResolvedPdfName)
+    }
+
     fun convertPdfToCbt(
         testTitle: String,
         questionPaperText: String,
@@ -165,64 +205,17 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
         pdfFileName: String = "Uploaded_Paper.pdf",
         durationMinutes: Int = 180
     ) {
-        viewModelScope.launch {
-            _conversionState.value = ConversionUiState(
-                isProcessing = true,
-                progressMessage = "Analyzing Question Paper & Answer Key with Gemini AI..."
-            )
-
-            try {
-                val result = GeminiJeeExtractor.extractJeePaper(
-                    context = getApplication(),
-                    questionPaperContent = questionPaperText,
-                    answerKeyContent = answerKeyText,
-                    testTitle = testTitle.ifBlank { "JEE Main Paper 1 (${pdfFileName.substringBeforeLast(".")})" }
-                )
-
-                if (result.questions.isNotEmpty()) {
-                    val testId = UUID.randomUUID().toString()
-                    val phyCount = result.questions.count { it.subject == Subject.PHYSICS }
-                    val cheCount = result.questions.count { it.subject == Subject.CHEMISTRY }
-                    val matCount = result.questions.count { it.subject == Subject.MATHEMATICS }
-
-                    val newTest = JeeTestEntity(
-                        testId = testId,
-                        title = result.testTitle,
-                        sourcePdfName = pdfFileName,
-                        totalQuestions = result.questions.size,
-                        durationMinutes = durationMinutes,
-                        createdAt = System.currentTimeMillis(),
-                        questionsJson = repository.convertersFromQuestions(result.questions),
-                        isSample = false,
-                        physicsQuestionsCount = phyCount,
-                        chemistryQuestionsCount = cheCount,
-                        mathsQuestionsCount = matCount,
-                        tags = if (result.aiUsed) "AI Converted (Gemini), $pdfFileName" else "Local Parser, $pdfFileName"
-                    )
-
-                    repository.insertTest(newTest, result.questions)
-
-                    _conversionState.value = ConversionUiState(
-                        isProcessing = false,
-                        extractedQuestionsCount = result.questions.size,
-                        flaggedCount = result.flaggedQuestions.size,
-                        newlyCreatedTestId = testId,
-                        aiStatusMessage = result.statusMessage,
-                        extractedQuestions = result.questions
-                    )
-                } else {
-                    _conversionState.value = ConversionUiState(
-                        isProcessing = false,
-                        errorMessage = result.errorMessage ?: "Could not extract questions from the provided documents. Please check the text format."
-                    )
-                }
-            } catch (e: Exception) {
-                _conversionState.value = ConversionUiState(
-                    isProcessing = false,
-                    errorMessage = "Error during extraction: ${e.localizedMessage}"
-                )
-            }
-        }
+        val params = DocumentProcessingParams(
+            testTitle = testTitle.ifBlank { "JEE Main Paper (${pdfFileName.substringBeforeLast(".")})" },
+            questionPaperText = questionPaperText,
+            answerKeyText = answerKeyText,
+            pageImagesBase64 = emptyList(),
+            totalPages = 1,
+            durationMinutes = durationMinutes
+        )
+        lastConversionParams = params
+        lastResolvedPdfName = pdfFileName
+        executeDocumentConversion(params, pdfFileName)
     }
 
     fun convertFilesToCbt(
@@ -234,9 +227,14 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
         durationMinutes: Int = 180,
         pdfFileName: String = "Uploaded_Paper.pdf"
     ) {
-        viewModelScope.launch {
+        conversionJob?.cancel()
+        conversionTickerJob?.cancel()
+
+        conversionJob = viewModelScope.launch {
             _conversionState.value = ConversionUiState(
                 isProcessing = true,
+                currentStep = ProcessingStep.READING_PDF,
+                progressPercent = 5,
                 progressMessage = "Reading and extracting document pages..."
             )
 
@@ -244,6 +242,7 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                 var qPaperText = fallbackQuestionText
                 var pageImages = emptyList<String>()
                 var resolvedPdfName = pdfFileName
+                var totalPagesCount = 1
 
                 if (questionPdfUri != null) {
                     val extractedDoc = com.example.data.ai.PdfDocumentHelper.extractContentFromUri(
@@ -255,9 +254,12 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     pageImages = extractedDoc.base64Images
                     resolvedPdfName = extractedDoc.fileName
+                    totalPagesCount = maxOf(1, extractedDoc.pageCount)
                 }
 
                 _conversionState.value = _conversionState.value.copy(
+                    currentStep = ProcessingStep.READING_ANSWER_KEY,
+                    progressPercent = 15,
                     progressMessage = "Parsing Official Answer Key & matching layout..."
                 )
 
@@ -272,19 +274,75 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                _conversionState.value = _conversionState.value.copy(
-                    progressMessage = "Running OCR & AI question detection..."
-                )
-
-                val result = GeminiJeeExtractor.extractJeePaper(
-                    context = getApplication(),
-                    questionPaperContent = qPaperText,
-                    answerKeyContent = ansKeyText,
+                val params = DocumentProcessingParams(
                     testTitle = testTitle.ifBlank { "JEE Main CBT (${resolvedPdfName.substringBeforeLast(".")})" },
-                    pageImagesBase64 = pageImages
+                    questionPaperText = qPaperText,
+                    answerKeyText = ansKeyText,
+                    pageImagesBase64 = pageImages,
+                    totalPages = totalPagesCount,
+                    durationMinutes = durationMinutes
                 )
+                lastConversionParams = params
+                lastResolvedPdfName = resolvedPdfName
 
-                if (result.questions.isNotEmpty()) {
+                executeDocumentConversion(params, resolvedPdfName)
+            } catch (e: CancellationException) {
+                // Cancelled gracefully
+            } catch (e: Exception) {
+                conversionTickerJob?.cancel()
+                _conversionState.value = ConversionUiState(
+                    isProcessing = false,
+                    errorMessage = "Failed to extract document files: ${e.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    private fun executeDocumentConversion(params: DocumentProcessingParams, resolvedPdfName: String) {
+        conversionJob?.cancel()
+        conversionTickerJob?.cancel()
+
+        val startTimestamp = System.currentTimeMillis()
+
+        // Start live elapsed timer ticker
+        conversionTickerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1000)
+                val elapsed = (System.currentTimeMillis() - startTimestamp) / 1000
+                _conversionState.value = _conversionState.value.copy(elapsedSeconds = elapsed)
+            }
+        }
+
+        conversionJob = viewModelScope.launch {
+            _conversionState.value = _conversionState.value.copy(
+                isProcessing = true,
+                errorMessage = null,
+                elapsedSeconds = 0
+            )
+
+            try {
+                // Choose Provider: Gemini if configured, otherwise Fallback to LocalLayout
+                val activeProvider: AIProvider = if (geminiAiProvider.isConfigured()) {
+                    geminiAiProvider
+                } else {
+                    localAiProvider
+                }
+
+                val result: DocumentProcessingResult = activeProvider.processDocument(params) { progress ->
+                    _conversionState.value = _conversionState.value.copy(
+                        currentStep = progress.step,
+                        progressPercent = progress.progressPercent,
+                        progressMessage = progress.message,
+                        pagesProcessed = progress.pagesProcessed,
+                        totalPages = progress.totalPages,
+                        questionsDetected = progress.questionsDetected,
+                        estimatedRemainingSeconds = progress.estimatedRemainingSeconds
+                    )
+                }
+
+                conversionTickerJob?.cancel()
+
+                if (result.success && result.questions.isNotEmpty()) {
                     val testId = UUID.randomUUID().toString()
                     val phyCount = result.questions.count { it.subject == Subject.PHYSICS }
                     val cheCount = result.questions.count { it.subject == Subject.CHEMISTRY }
@@ -295,33 +353,43 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                         title = result.testTitle,
                         sourcePdfName = resolvedPdfName,
                         totalQuestions = result.questions.size,
-                        durationMinutes = durationMinutes,
+                        durationMinutes = params.durationMinutes,
                         createdAt = System.currentTimeMillis(),
                         questionsJson = repository.convertersFromQuestions(result.questions),
                         isSample = false,
                         physicsQuestionsCount = phyCount,
                         chemistryQuestionsCount = cheCount,
                         mathsQuestionsCount = matCount,
-                        tags = if (result.aiUsed) "AI Converted (Gemini), $resolvedPdfName" else "Local Layout Engine, $resolvedPdfName"
+                        tags = if (result.providerUsed == AIProviderType.GEMINI_API) "AI Converted (Gemini), $resolvedPdfName" else "Local Layout Engine, $resolvedPdfName"
                     )
 
                     repository.insertTest(newTest, result.questions)
 
                     _conversionState.value = ConversionUiState(
                         isProcessing = false,
+                        currentStep = ProcessingStep.COMPLETE,
+                        progressPercent = 100,
+                        progressMessage = "CBT Generation Complete!",
                         extractedQuestionsCount = result.questions.size,
+                        validatedCount = result.validatedCount,
+                        diagramsCount = result.diagramsCount,
                         flaggedCount = result.flaggedQuestions.size,
                         newlyCreatedTestId = testId,
                         aiStatusMessage = result.statusMessage,
-                        extractedQuestions = result.questions
+                        extractedQuestions = result.questions,
+                        elapsedSeconds = result.elapsedSeconds,
+                        providerUsed = result.providerUsed
                     )
                 } else {
                     _conversionState.value = ConversionUiState(
                         isProcessing = false,
-                        errorMessage = result.errorMessage ?: "Could not detect questions. Please verify your PDF/text format."
+                        errorMessage = result.errorMessage ?: "Could not detect questions. Please verify your PDF format or text."
                     )
                 }
+            } catch (e: CancellationException) {
+                conversionTickerJob?.cancel()
             } catch (e: Exception) {
+                conversionTickerJob?.cancel()
                 _conversionState.value = ConversionUiState(
                     isProcessing = false,
                     errorMessage = "Extraction failed: ${e.localizedMessage}"

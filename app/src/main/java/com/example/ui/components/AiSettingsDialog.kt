@@ -195,39 +195,38 @@ fun AiSettingsDialog(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = when (aiConfig.source) {
-                                    AiKeySource.USER_KEY, AiKeySource.ENV_SECRET -> Icons.Default.CheckCircle
-                                    AiKeySource.NONE -> Icons.Default.WarningAmber
-                                },
-                                contentDescription = null,
-                                tint = when (aiConfig.source) {
-                                    AiKeySource.USER_KEY -> Color(0xFF2E7D32)
-                                    AiKeySource.ENV_SECRET -> Color(0xFF1565C0)
-                                    AiKeySource.NONE -> Color(0xFFE65100)
-                                },
+                            RadioButton(
+                                selected = true,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = JeeCyan),
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = when (aiConfig.source) {
-                                    AiKeySource.USER_KEY -> "Gemini Connected (User API Key)"
-                                    AiKeySource.ENV_SECRET -> "Gemini Connected (AI Studio Environment Secret)"
-                                    AiKeySource.NONE -> "Gemini Not Configured"
-                                },
+                                text = "AI Provider: Gemini API",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
-                                color = when (aiConfig.source) {
-                                    AiKeySource.USER_KEY -> Color(0xFF2E7D32)
-                                    AiKeySource.ENV_SECRET -> Color(0xFF1565C0)
-                                    AiKeySource.NONE -> Color(0xFFE65100)
-                                }
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (aiConfig.isConfigured) "Active: ${aiConfig.maskedKey}" else "No active key detected. The app uses local algorithmic extraction until configured.",
+                            text = when (aiConfig.source) {
+                                AiKeySource.USER_KEY -> "Gemini API: Connected (User API Key)"
+                                AiKeySource.ENV_SECRET -> "Gemini API: Connected (Server-side Environment Secret)"
+                                AiKeySource.NONE -> "Gemini API: Not Configured"
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = when (aiConfig.source) {
+                                AiKeySource.USER_KEY -> Color(0xFF2E7D32)
+                                AiKeySource.ENV_SECRET -> Color(0xFF1565C0)
+                                AiKeySource.NONE -> Color(0xFFE65100)
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (aiConfig.isConfigured) "Key: ${aiConfig.maskedKey}" else "No active key detected. Local layout engine is used as fallback.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -370,7 +369,7 @@ fun AiSettingsDialog(
                                 ) {
                                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Sending test prompt to gemini-3.5-flash...", fontSize = 12.sp)
+                                    Text("Sending test prompt to Gemini API (gemini-2.5-flash)...", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -416,6 +415,19 @@ fun AiSettingsDialog(
                                     if (!status.details.isNullOrBlank()) {
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text("Details: ${status.details}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    FilledTonalButton(
+                                        onClick = {
+                                            viewModel.testGeminiConnection(inputKey.takeIf { it.isNotBlank() })
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Retry Test", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

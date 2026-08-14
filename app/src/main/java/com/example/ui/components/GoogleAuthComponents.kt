@@ -1,10 +1,7 @@
 package com.example.ui.components
 
-import android.app.Activity
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.auth.AuthState
 import com.example.data.auth.UserProfile
@@ -102,7 +100,7 @@ fun GoogleSignInButton(
 }
 
 /**
- * User Profile Avatar Chip in the Top App Bar
+ * User Profile Avatar Chip / Sign In Button in the Top App Bar
  */
 @Composable
 fun UserAccountTopBarAction(
@@ -111,8 +109,8 @@ fun UserAccountTopBarAction(
 ) {
     val currentUser by viewModel.currentUser.collectAsState()
     val authState by viewModel.authState.collectAsState()
-    val context = LocalContext.current
     var showAccountDialog by remember { mutableStateOf(false) }
+    var showSignInDialog by remember { mutableStateOf(false) }
 
     val isAuthenticating = authState is AuthState.Authenticating
 
@@ -168,12 +166,14 @@ fun UserAccountTopBarAction(
         }
     } else {
         FilledTonalButton(
-            onClick = {
-                viewModel.signInWithGoogle(context)
-            },
+            onClick = { showSignInDialog = true },
             enabled = !isAuthenticating,
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
             modifier = modifier
                 .padding(end = 4.dp)
                 .testTag("sign_in_header_button")
@@ -187,16 +187,24 @@ fun UserAccountTopBarAction(
                 Icon(
                     imageVector = Icons.Default.AccountCircle,
                     contentDescription = "Sign In",
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
+                    tint = JeeCyan
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
                     text = "Sign In",
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
+    }
+
+    if (showSignInDialog) {
+        DedicatedSignInDialog(
+            viewModel = viewModel,
+            onDismiss = { showSignInDialog = false }
+        )
     }
 
     if (showAccountDialog && currentUser != null) {
@@ -208,6 +216,194 @@ fun UserAccountTopBarAction(
             },
             onDismiss = { showAccountDialog = false }
         )
+    }
+}
+
+/**
+ * Dedicated Real Sign-In Screen / Modal
+ */
+@Composable
+fun DedicatedSignInDialog(
+    viewModel: JeeViewModel,
+    onDismiss: () -> Unit
+) {
+    val currentUser by viewModel.currentUser.collectAsState()
+    val authState by viewModel.authState.collectAsState()
+    val context = LocalContext.current
+
+    // If user successfully logs in, dismiss dialog automatically
+    LaunchedEffect(currentUser) {
+        if (currentUser != null) {
+            onDismiss()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = {
+            viewModel.clearAuthError()
+            onDismiss()
+        },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 24.dp)
+                .testTag("dedicated_sign_in_dialog")
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sign In",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(
+                        onClick = {
+                            viewModel.clearAuthError()
+                            onDismiss()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Brand Hero
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(JeeNavyDark),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "K",
+                        color = JeeCyan,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "KARAM 2027",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Text(
+                    text = "Sign in to sync your tests and analysis.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Feature Highlights
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CloudDone, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Automatic test & forensic report backup", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoGraph, contentDescription = null, tint = JeeOrange, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Cross-device JEE analytics & Mistake Book", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Secure on-device Google OAuth authentication", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Sign In Button
+                GoogleSignInButton(
+                    onClick = {
+                        viewModel.signInWithGoogle(context)
+                    },
+                    isLoading = authState is AuthState.Authenticating,
+                    text = "Continue with Google"
+                )
+
+                if (authState is AuthState.Error) {
+                    val errorMsg = (authState as AuthState.Error).message
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ErrorOutline,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = errorMsg,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.clearAuthError() },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Google Sign-In is optional. PDF to CBT processing and offline testing work completely without signing in.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 
@@ -297,7 +493,6 @@ fun AccountDetailsDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Verified Badge
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFFE8F0FE),
@@ -338,109 +533,6 @@ fun AccountDetailsDialog(
                     Icon(Icons.Default.Logout, contentDescription = "Sign Out", modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Sign Out of Google", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Authentication Banner / Card on Home Screen if not signed in
- */
-@Composable
-fun GoogleSignInBanner(
-    viewModel: JeeViewModel,
-    modifier: Modifier = Modifier
-) {
-    val currentUser by viewModel.currentUser.collectAsState()
-    val authState by viewModel.authState.collectAsState()
-    val context = LocalContext.current
-
-    if (currentUser == null) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .testTag("google_auth_banner")
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF4285F4).copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = Color(0xFF4285F4),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Google Account Sync",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Sign in to persist your JEE CBT tests and forensic leak reports",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                GoogleSignInButton(
-                    onClick = {
-                        viewModel.signInWithGoogle(context)
-                    },
-                    isLoading = authState is AuthState.Authenticating
-                )
-
-                if (authState is AuthState.Error) {
-                    val errorMsg = (authState as AuthState.Error).message
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                            .padding(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ErrorOutline,
-                            contentDescription = "Error",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = errorMsg,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = { viewModel.clearAuthError() },
-                            modifier = Modifier.size(20.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Dismiss",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
                 }
             }
         }

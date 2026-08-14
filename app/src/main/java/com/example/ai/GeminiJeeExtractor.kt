@@ -8,8 +8,6 @@ import com.example.data.model.Difficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionType
 import com.example.data.model.Subject
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,13 +24,9 @@ object GeminiJeeExtractor {
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL_NAME:generateContent"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(90, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .writeTimeout(90, TimeUnit.SECONDS)
-        .build()
-
-    private val moshi = Moshi.Builder()
-        .add(KotlinJsonAdapterFactory())
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     data class ExtractionResult(
@@ -52,23 +46,69 @@ object GeminiJeeExtractor {
         answerKeyContent: String,
         testTitle: String = "JEE Main CBT Examination",
         pageImagesBase64: List<String> = emptyList()
+    ): ExtractionResult = extractJeePaperWithProgress(
+        context = context,
+        questionPaperContent = questionPaperContent,
+        answerKeyContent = answerKeyContent,
+        testTitle = testTitle,
+        pageImagesBase64 = pageImagesBase64,
+        totalPages = maxOf(1, pageImagesBase64.size),
+        targetQuestionCount = null,
+        onProgress = {}
+    )
+
+    suspend fun extractJeePaperWithProgress(
+        context: Context,
+        questionPaperContent: String,
+        answerKeyContent: String,
+        testTitle: String = "JEE Main CBT Examination",
+        pageImagesBase64: List<String> = emptyList(),
+        totalPages: Int = 1,
+        targetQuestionCount: Int? = null,
+        onProgress: (ProcessingProgress) -> Unit = {}
     ): ExtractionResult = withContext(Dispatchers.IO) {
         val aiKeyManager = AiKeyManager.getInstance(context)
         val apiKey = aiKeyManager.getActiveApiKey()
         val keySource = aiKeyManager.getActiveKeySource()
 
         if (apiKey.isNullOrBlank()) {
-            Log.w(TAG, "Gemini API key is not configured. Falling back to robust local algorithmic parser.")
+            Log.w(TAG, "Gemini API key is not configured. Falling back to local algorithmic parser.")
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.DETECTING_LAYOUT,
+                    progressPercent = 30,
+                    message = "No Gemini API Key found. Parsing with local layout engine...",
+                    totalPages = totalPages
+                )
+            )
             val fallbackResult = parseAlgorithmicFallback(questionPaperContent, answerKeyContent, testTitle)
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.BUILDING_CBT,
+                    progressPercent = 95,
+                    message = "Extracted ${fallbackResult.questions.size} questions with local parser.",
+                    totalPages = totalPages,
+                    questionsDetected = fallbackResult.questions.size
+                )
+            )
             return@withContext fallbackResult.copy(
                 aiUsed = false,
                 keySource = AiKeySource.NONE,
-                statusMessage = "Extracted ${fallbackResult.questions.size} questions using local layout engine. Configure Gemini API key for AI OCR reasoning.",
+                statusMessage = "Extracted ${fallbackResult.questions.size} questions using local layout engine.",
                 errorMessage = null
             )
         }
 
         try {
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.DETECTING_LAYOUT,
+                    progressPercent = 25,
+                    message = "Analyzing document structure & question blocks ($totalPages pages)...",
+                    totalPages = totalPages
+                )
+            )
+
             val prompt = """
                 You are a senior NTA JEE Main Examination Controller and PDF-to-CBT Extraction System.
                 Parse the provided Question Paper (text and/or page images) and Official Answer Key to generate a high-accuracy, full Computer Based Test (CBT).
@@ -127,14 +167,23 @@ object GeminiJeeExtractor {
                 $answerKeyContent
             """.trimIndent()
 
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.DETECTING_QUESTIONS,
+                    progressPercent = 45,
+                    message = "Detecting questions, options, formulas & diagrams via Gemini AI...",
+                    totalPages = totalPages
+                )
+            )
+
             val requestJson = JSONObject().apply {
                 val contentsArray = JSONArray().apply {
                     val contentObj = JSONObject().apply {
                         val partsArray = JSONArray().apply {
                             put(JSONObject().apply { put("text", prompt) })
 
-                            // If page images are provided, attach first 3 pages as inline_data
-                            for (i in 0 until minOf(pageImagesBase64.size, 3)) {
+                            // If page images are provided, attach up to 4 pages as inline_data
+                            for (i in 0 until minOf(pageImagesBase64.size, 4)) {
                                 val imgBase64 = pageImagesBase64[i]
                                 if (imgBase64.isNotBlank()) {
                                     val inlineDataObj = JSONObject().apply {
@@ -162,6 +211,15 @@ object GeminiJeeExtractor {
                 put("generationConfig", genConfig)
             }
 
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.MAPPING_ANSWERS,
+                    progressPercent = 65,
+                    message = "Parsing Official Answer Key & mapping to question numbers...",
+                    totalPages = totalPages
+                )
+            )
+
             val requestBody = requestJson.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url("$BASE_URL?key=$apiKey")
@@ -170,6 +228,15 @@ object GeminiJeeExtractor {
 
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string()
+
+            onProgress(
+                ProcessingProgress(
+                    step = ProcessingStep.VALIDATING,
+                    progressPercent = 85,
+                    message = "Validating question items, answers & mathematical notation...",
+                    totalPages = totalPages
+                )
+            )
 
             if (!response.isSuccessful || responseBody.isNullOrBlank()) {
                 val code = response.code
@@ -207,6 +274,15 @@ object GeminiJeeExtractor {
 
             val result = parseQuestionsFromJson(text, testTitle)
             if (result.questions.isNotEmpty()) {
+                onProgress(
+                    ProcessingProgress(
+                        step = ProcessingStep.BUILDING_CBT,
+                        progressPercent = 95,
+                        message = "Building NTA JEE CBT Test (${result.questions.size} questions)...",
+                        totalPages = totalPages,
+                        questionsDetected = result.questions.size
+                    )
+                )
                 result.copy(
                     aiUsed = true,
                     keySource = keySource,

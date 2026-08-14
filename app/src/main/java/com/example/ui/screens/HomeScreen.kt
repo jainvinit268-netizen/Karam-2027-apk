@@ -156,9 +156,6 @@ fun HomeScreen(
                 }
             }
 
-            // Google Sign-In Banner if not authenticated
-            GoogleSignInBanner(viewModel = viewModel)
-
             // Smooth Animated Section Switching Container
             AnimatedContent(
                 targetState = selectedSection,
