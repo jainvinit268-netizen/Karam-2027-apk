@@ -1,0 +1,6 @@
+{
+  "name": "KARAM 2027",
+  "description": "JEE Main Paper 1 AI PDF to CBT Converter & Simulator with KARAM 2027 branding and Sacred Invocations",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
