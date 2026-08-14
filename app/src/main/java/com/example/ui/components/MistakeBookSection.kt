@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,8 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.JeeConverters
 import com.example.data.model.*
-import com.example.data.sample.SampleJeePapers
 import com.example.ui.theme.*
+import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.JeeViewModel
 
 @Composable
@@ -40,7 +41,7 @@ fun MistakeBookSection(
     var selectedMistakeFilter by remember { mutableStateOf("All") }
     var selectedSubjectFilter by remember { mutableStateOf<Subject?>(null) }
 
-    // Parse all mistakes across past attempts
+    // Parse all real mistakes across past user attempts (NO demo/sample data)
     val converters = remember { JeeConverters() }
     val mistakeList = remember(attempts, tests) {
         val list = mutableListOf<Triple<QuestionItem, StudentResponse, String>>()
@@ -61,60 +62,6 @@ fun MistakeBookSection(
                 }
             }
         }
-
-        // If user hasn't attempted yet, provide guided sample mistakes
-        if (list.isEmpty()) {
-            val samples = SampleJeePapers.getSamplePaper2025Jan()
-            if (samples.isNotEmpty()) {
-                list.add(
-                    Triple(
-                        samples[0],
-                        StudentResponse(
-                            questionId = samples[0].id,
-                            selectedOption = "A",
-                            isCorrect = false,
-                            marksAwarded = -1,
-                            mistakeCategory = MistakeType.SILLY_MISTAKE,
-                            timeSpentSeconds = 85
-                        ),
-                        "JEE Main 2025 Jan Session"
-                    )
-                )
-                if (samples.size > 1) {
-                    list.add(
-                        Triple(
-                            samples[1],
-                            StudentResponse(
-                                questionId = samples[1].id,
-                                selectedOption = "C",
-                                isCorrect = false,
-                                marksAwarded = -1,
-                                mistakeCategory = MistakeType.CALCULATION_MISTAKE,
-                                timeSpentSeconds = 120
-                            ),
-                            "JEE Main 2025 Jan Session"
-                        )
-                    )
-                }
-                if (samples.size > 2) {
-                    list.add(
-                        Triple(
-                            samples[2],
-                            StudentResponse(
-                                questionId = samples[2].id,
-                                selectedOption = "B",
-                                isCorrect = false,
-                                marksAwarded = -1,
-                                mistakeCategory = MistakeType.CONCEPTUAL_MISTAKE,
-                                timeSpentSeconds = 95
-                            ),
-                            "JEE Main 2025 Jan Session"
-                        )
-                    )
-                }
-            }
-        }
-
         list
     }
 
@@ -140,102 +87,148 @@ fun MistakeBookSection(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Top Banner with 1-Tap Revision Test Generator
-        Card(
-            colors = CardDefaults.cardColors(containerColor = JeeNavyDark),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, JeeCyan),
-            modifier = Modifier.fillMaxWidth().testTag("mistake_book_hero_card")
-        ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.MenuBook, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("My JEE Mistake Book (${mistakeList.size} Logged)", fontWeight = FontWeight.Bold, color = JeeCyan, fontSize = 14.sp)
-                }
-                Text(
-                    text = "Mistakes are automatically tagged by error type. Fix your conceptual leaks and re-test weak spots.",
-                    fontSize = 11.sp,
-                    color = Color.LightGray
-                )
-                Button(
-                    onClick = {
-                        viewModel.createAndLaunchRevisionTest(
-                            title = "Targeted Mistake Revision Test (20 Qs)",
-                            targetSubject = selectedSubjectFilter,
-                            durationMinutes = 30
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = JeeNavyDark),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("btn_generate_revision_test")
+        if (mistakeList.isEmpty()) {
+            // Clean empty state
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("🚀 Generate Targeted Revision Test", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            }
-        }
-
-        // Mistake Type Filters
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            val categories = listOf("All", "Formula / Concept", "Calculation", "Silly Mistake", "Time Trap", "Wrong Approach")
-            items(categories) { cat ->
-                val isSelected = selectedMistakeFilter == cat
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { selectedMistakeFilter = cat },
-                    label = { Text(cat, fontSize = 11.sp) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = NtaRedLight.copy(alpha = 0.25f), selectedLabelColor = NtaRedLight),
-                    shape = RoundedCornerShape(16.dp)
-                )
-            }
-        }
-
-        // Subject Filters
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            val subjects = listOf<Pair<String, Subject?>>(
-                "All Subjects" to null,
-                "Physics" to Subject.PHYSICS,
-                "Chemistry" to Subject.CHEMISTRY,
-                "Maths" to Subject.MATHEMATICS
-            )
-            subjects.forEach { (label, subj) ->
-                val isSelected = selectedSubjectFilter == subj
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) JeeCyan else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.weight(1f).clickable { selectedSubjectFilter = subj }
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) JeeNavyDark else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 10.sp
-                        )
+                    Icon(
+                        imageVector = Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = JeeCyan,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Mistake Book is Empty",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Take a test from your library or upload a new PDF. Any incorrect, time-trapped, or flagged questions will automatically appear here with chapter breakdown and video solutions.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Button(
+                        onClick = { viewModel.navigateTo(AppScreen.ConvertPdf) },
+                        colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Upload Question Paper & Key", fontWeight = FontWeight.Bold)
                     }
                 }
             }
-        }
-
-        // List of Mistake Cards
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 80.dp)
-        ) {
-            items(filteredMistakes) { (q, resp, testTitle) ->
-                MistakeCardItem(
-                    question = q,
-                    response = resp,
-                    testTitle = testTitle,
-                    onWatchVideo = {
-                        val query = q.youtubeSearchQuery.ifBlank { "JEE Main ${q.subject.displayName} ${q.chapter} solution" }
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}"))
-                        context.startActivity(intent)
+        } else {
+            // Hero card with Revision Test Generator
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, JeeCyan.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("mistake_book_hero_card")
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.MenuBook, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("My JEE Mistake Book (${mistakeList.size} Logged)", fontWeight = FontWeight.Bold, color = JeeCyan, fontSize = 14.sp)
                     }
+                    Text(
+                        text = "Mistakes are automatically tagged by error type. Fix your conceptual leaks and re-test weak spots.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.createRevisionTestFromMistakes { testId ->
+                                viewModel.startExam(testId)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_generate_revision_test")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("🎯 Generate Targeted Revision CBT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            // Mistake Type Filters
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                val categories = listOf("All", "Formula / Concept", "Calculation", "Silly Mistake", "Time Trap", "Wrong Approach")
+                items(categories) { cat ->
+                    val isSelected = selectedMistakeFilter == cat
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedMistakeFilter = cat },
+                        label = { Text(cat, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NtaRedLight.copy(alpha = 0.25f),
+                            selectedLabelColor = NtaRedLight
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+            }
+
+            // Subject Filters
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val subjects = listOf<Pair<String, Subject?>>(
+                    "All Subjects" to null,
+                    "Physics" to Subject.PHYSICS,
+                    "Chemistry" to Subject.CHEMISTRY,
+                    "Maths" to Subject.MATHEMATICS
                 )
+                subjects.forEach { (label, subj) ->
+                    val isSelected = selectedSubjectFilter == subj
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) JeeCyan else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.weight(1f).clickable { selectedSubjectFilter = subj }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // List of Mistake Cards
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                items(filteredMistakes) { (q, resp, testTitle) ->
+                    MistakeCardItem(
+                        question = q,
+                        response = resp,
+                        testTitle = testTitle,
+                        onWatchVideo = {
+                            val query = q.youtubeSearchQuery.ifBlank { "JEE Main ${q.subject.displayName} ${q.chapter} solution" }
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}"))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
             }
         }
     }
@@ -253,11 +246,15 @@ private fun MistakeCardItem(
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E2E42)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded }
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = "Q${question.questionNumber} • ${question.subject.displayName}",
                     fontWeight = FontWeight.Bold,
@@ -297,9 +294,9 @@ private fun MistakeCardItem(
 
             AnimatedVisibility(visible = isExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-                    Divider(color = Color(0xFF2E2E42), thickness = 0.8.dp)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.8.dp)
                     Text("Chapter: ${question.chapter} • Concept: ${question.concept}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                    Text("Best JEE Solution & Fastest Method:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = NtaGreenLight)
+                    Text("Official JEE Solution:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = NtaGreenLight)
                     Text(text = question.solutionText, fontSize = 11.sp)
 
                     Button(

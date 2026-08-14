@@ -162,7 +162,8 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
         testTitle: String,
         questionPaperText: String,
         answerKeyText: String,
-        pdfFileName: String = "Uploaded_Paper.pdf"
+        pdfFileName: String = "Uploaded_Paper.pdf",
+        durationMinutes: Int = 180
     ) {
         viewModelScope.launch {
             _conversionState.value = ConversionUiState(
@@ -189,7 +190,7 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                         title = result.testTitle,
                         sourcePdfName = pdfFileName,
                         totalQuestions = result.questions.size,
-                        durationMinutes = 180,
+                        durationMinutes = durationMinutes,
                         createdAt = System.currentTimeMillis(),
                         questionsJson = repository.convertersFromQuestions(result.questions),
                         isSample = false,
@@ -221,6 +222,250 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
                     errorMessage = "Error during extraction: ${e.localizedMessage}"
                 )
             }
+        }
+    }
+
+    fun convertFilesToCbt(
+        testTitle: String,
+        questionPdfUri: android.net.Uri?,
+        answerKeyUri: android.net.Uri?,
+        fallbackQuestionText: String,
+        fallbackAnswerText: String,
+        durationMinutes: Int = 180,
+        pdfFileName: String = "Uploaded_Paper.pdf"
+    ) {
+        viewModelScope.launch {
+            _conversionState.value = ConversionUiState(
+                isProcessing = true,
+                progressMessage = "Reading and extracting document pages..."
+            )
+
+            try {
+                var qPaperText = fallbackQuestionText
+                var pageImages = emptyList<String>()
+                var resolvedPdfName = pdfFileName
+
+                if (questionPdfUri != null) {
+                    val extractedDoc = com.example.data.ai.PdfDocumentHelper.extractContentFromUri(
+                        context = getApplication(),
+                        uri = questionPdfUri
+                    )
+                    if (extractedDoc.extractedText.isNotBlank()) {
+                        qPaperText = extractedDoc.extractedText
+                    }
+                    pageImages = extractedDoc.base64Images
+                    resolvedPdfName = extractedDoc.fileName
+                }
+
+                _conversionState.value = _conversionState.value.copy(
+                    progressMessage = "Parsing Official Answer Key & matching layout..."
+                )
+
+                var ansKeyText = fallbackAnswerText
+                if (answerKeyUri != null) {
+                    val extractedKeyDoc = com.example.data.ai.PdfDocumentHelper.extractContentFromUri(
+                        context = getApplication(),
+                        uri = answerKeyUri
+                    )
+                    if (extractedKeyDoc.extractedText.isNotBlank()) {
+                        ansKeyText = extractedKeyDoc.extractedText
+                    }
+                }
+
+                _conversionState.value = _conversionState.value.copy(
+                    progressMessage = "Running OCR & AI question detection..."
+                )
+
+                val result = GeminiJeeExtractor.extractJeePaper(
+                    context = getApplication(),
+                    questionPaperContent = qPaperText,
+                    answerKeyContent = ansKeyText,
+                    testTitle = testTitle.ifBlank { "JEE Main CBT (${resolvedPdfName.substringBeforeLast(".")})" },
+                    pageImagesBase64 = pageImages
+                )
+
+                if (result.questions.isNotEmpty()) {
+                    val testId = UUID.randomUUID().toString()
+                    val phyCount = result.questions.count { it.subject == Subject.PHYSICS }
+                    val cheCount = result.questions.count { it.subject == Subject.CHEMISTRY }
+                    val matCount = result.questions.count { it.subject == Subject.MATHEMATICS }
+
+                    val newTest = JeeTestEntity(
+                        testId = testId,
+                        title = result.testTitle,
+                        sourcePdfName = resolvedPdfName,
+                        totalQuestions = result.questions.size,
+                        durationMinutes = durationMinutes,
+                        createdAt = System.currentTimeMillis(),
+                        questionsJson = repository.convertersFromQuestions(result.questions),
+                        isSample = false,
+                        physicsQuestionsCount = phyCount,
+                        chemistryQuestionsCount = cheCount,
+                        mathsQuestionsCount = matCount,
+                        tags = if (result.aiUsed) "AI Converted (Gemini), $resolvedPdfName" else "Local Layout Engine, $resolvedPdfName"
+                    )
+
+                    repository.insertTest(newTest, result.questions)
+
+                    _conversionState.value = ConversionUiState(
+                        isProcessing = false,
+                        extractedQuestionsCount = result.questions.size,
+                        flaggedCount = result.flaggedQuestions.size,
+                        newlyCreatedTestId = testId,
+                        aiStatusMessage = result.statusMessage,
+                        extractedQuestions = result.questions
+                    )
+                } else {
+                    _conversionState.value = ConversionUiState(
+                        isProcessing = false,
+                        errorMessage = result.errorMessage ?: "Could not detect questions. Please verify your PDF/text format."
+                    )
+                }
+            } catch (e: Exception) {
+                _conversionState.value = ConversionUiState(
+                    isProcessing = false,
+                    errorMessage = "Extraction failed: ${e.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    fun createRevisionTestFromMistakes(onSuccess: (String) -> Unit) {
+        viewModelScope.launch {
+            val allAttemptsList = allAttempts.value
+            val allTestsList = allTests.value
+            val testMap = allTestsList.associateBy { it.testId }
+            val mistakeQuestions = mutableListOf<QuestionItem>()
+            val seenIds = mutableSetOf<String>()
+
+            for (att in allAttemptsList) {
+                val test = testMap[att.testId] ?: continue
+                val qList = repository.parseQuestions(test.questionsJson)
+                val respMap = repository.parseResponses(att.responsesJson)
+
+                for (q in qList) {
+                    val resp = respMap[q.id]
+                    val isWrong = resp?.isCorrect == false || (resp != null && resp.status == QuestionStatus.ANSWERED && resp.marksAwarded <= 0)
+                    val isFlagged = resp?.mistakeCategory != null && resp.mistakeCategory != MistakeType.NONE
+                    if ((isWrong || isFlagged) && !seenIds.contains(q.id)) {
+                        seenIds.add(q.id)
+                        mistakeQuestions.add(q)
+                    }
+                }
+            }
+
+            if (mistakeQuestions.isEmpty()) return@launch
+
+            val revTestId = "rev_${UUID.randomUUID().toString().take(8)}"
+            val phyCount = mistakeQuestions.count { it.subject == Subject.PHYSICS }
+            val cheCount = mistakeQuestions.count { it.subject == Subject.CHEMISTRY }
+            val matCount = mistakeQuestions.count { it.subject == Subject.MATHEMATICS }
+
+            val revTest = JeeTestEntity(
+                testId = revTestId,
+                title = "🎯 Personal Mistake Revision Test (${mistakeQuestions.size} Questions)",
+                sourcePdfName = "Generated_From_Mistake_Book",
+                totalQuestions = mistakeQuestions.size,
+                durationMinutes = maxOf(15, mistakeQuestions.size * 2),
+                createdAt = System.currentTimeMillis(),
+                questionsJson = repository.convertersFromQuestions(mistakeQuestions),
+                isSample = false,
+                physicsQuestionsCount = phyCount,
+                chemistryQuestionsCount = cheCount,
+                mathsQuestionsCount = matCount,
+                tags = "Personal Revision, Mistake Book, High Priority"
+            )
+
+            repository.insertTest(revTest, mistakeQuestions)
+            onSuccess(revTestId)
+        }
+    }
+
+    fun sendForensicEmail(context: Context, attempt: JeeAttemptEntity, report: ForensicReport, recipient: String = "jainvinit268@gmail.com") {
+        val subject = "JEE Main CBT Analysis Report: ${attempt.testTitle} [Score: ${report.totalScore}/300]"
+        val phy = report.subjectAnalyses.find { it.subject == com.example.data.model.Subject.PHYSICS }
+        val chem = report.subjectAnalyses.find { it.subject == com.example.data.model.Subject.CHEMISTRY }
+        val math = report.subjectAnalyses.find { it.subject == com.example.data.model.Subject.MATHEMATICS }
+
+        val body = """
+====================================================
+JEE MAIN CBT DETAILED FORENSIC PERFORMANCE REPORT
+====================================================
+Candidate: ${currentUser.value?.displayName ?: "JEE Aspirant"} (${currentUser.value?.email ?: recipient})
+Test Name: ${attempt.testTitle}
+Date: ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(attempt.attemptTimestamp))}
+
+OVERALL SCORECARD:
+----------------------------------------------------
+• Total Score: ${report.totalScore} / ${report.maxPossibleScore} (${String.format("%.1f", (report.totalScore.toFloat() / maxOf(1, report.maxPossibleScore)) * 100)}%)
+• Estimated Percentile: ${String.format("%.2f", report.estimatedPercentile)} %ile
+• Accuracy: ${String.format("%.1f", report.accuracyPercentage)}%
+• Attempt Rate: ${String.format("%.1f", (report.totalAttempted.toFloat() / maxOf(1, report.totalQuestions)) * 100)}%
+• Total Questions: ${report.totalQuestions}
+• Correct: ${report.correctCount} (+${report.correctCount * 4} marks)
+• Incorrect: ${report.incorrectCount} (-${report.totalNegativeMarksLost} marks)
+• Unattempted: ${report.unattemptedCount}
+• Net Negative Marks Lost: -${report.totalNegativeMarksLost} marks
+
+SUBJECT-WISE PERFORMANCE:
+----------------------------------------------------
+1. PHYSICS:
+   - Score: ${phy?.score ?: 0} / ${phy?.maxScore ?: 100}
+   - Accuracy: ${String.format("%.1f", phy?.accuracy ?: 0f)}%
+   - Correct / Incorrect / Unattempted: ${phy?.correctCount ?: 0} / ${phy?.incorrectCount ?: 0} / ${phy?.unattemptedCount ?: 0}
+   - Negative Marks Lost: -${phy?.negativeMarksLost ?: 0}
+   - Avg Time / Question: ${phy?.avgTimePerQuestionSeconds ?: 0}s
+
+2. CHEMISTRY:
+   - Score: ${chem?.score ?: 0} / ${chem?.maxScore ?: 100}
+   - Accuracy: ${String.format("%.1f", chem?.accuracy ?: 0f)}%
+   - Correct / Incorrect / Unattempted: ${chem?.correctCount ?: 0} / ${chem?.incorrectCount ?: 0} / ${chem?.unattemptedCount ?: 0}
+   - Negative Marks Lost: -${chem?.negativeMarksLost ?: 0}
+   - Avg Time / Question: ${chem?.avgTimePerQuestionSeconds ?: 0}s
+
+3. MATHEMATICS:
+   - Score: ${math?.score ?: 0} / ${math?.maxScore ?: 100}
+   - Accuracy: ${String.format("%.1f", math?.accuracy ?: 0f)}%
+   - Correct / Incorrect / Unattempted: ${math?.correctCount ?: 0} / ${math?.incorrectCount ?: 0} / ${math?.unattemptedCount ?: 0}
+   - Negative Marks Lost: -${math?.negativeMarksLost ?: 0}
+   - Avg Time / Question: ${math?.avgTimePerQuestionSeconds ?: 0}s
+
+TIME FORENSICS & LEAK AUDIT:
+----------------------------------------------------
+• Time Traps: ${report.timeTrapsCount} questions
+• Silly Mistakes: ${report.sillyMistakesCount} questions
+• Conceptual Gaps: ${report.conceptualMistakesCount} questions
+• Calculation Blunders: ${report.calculationMistakesCount} questions
+• Wrong Approach: ${report.wrongApproachCount} questions
+
+RECOMMENDED REVISION ACTIONS:
+----------------------------------------------------
+1. Review logged mistakes in the app's 'Mistake Book'.
+2. Take the Personal Revision Mini-Test to master weak concepts.
+3. Focus on time allocation in slow chapters before the next mock.
+
+====================================================
+Generated by AI Studio JEE CBT Platform
+        """.trimIndent()
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+            data = android.net.Uri.parse("mailto:$recipient")
+            putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+            putExtra(android.content.Intent.EXTRA_TEXT, body)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            context.startActivity(android.content.Intent.createChooser(intent, "Send JEE Analysis Report via Email"))
+        } catch (e: Exception) {
+            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(recipient))
+                putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+                putExtra(android.content.Intent.EXTRA_TEXT, body)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share JEE Analysis Report"))
         }
     }
 

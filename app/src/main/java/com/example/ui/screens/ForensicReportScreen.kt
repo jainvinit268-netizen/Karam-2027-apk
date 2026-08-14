@@ -107,7 +107,14 @@ fun ForensicReportScreen(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 // Score Hero Banner
-                ScoreHeroBanner(report = r, attempt = att)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                ScoreHeroBanner(
+                    report = r,
+                    attempt = att,
+                    onEmailReport = {
+                        viewModel.sendForensicEmail(context, att, r, "jainvinit268@gmail.com")
+                    }
+                )
 
                 // Navigation Tabs
                 TabRow(
@@ -175,7 +182,8 @@ fun ForensicReportScreen(
 @Composable
 private fun ScoreHeroBanner(
     report: ForensicReport,
-    attempt: JeeAttemptEntity
+    attempt: JeeAttemptEntity,
+    onEmailReport: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -236,7 +244,7 @@ private fun ScoreHeroBanner(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(modifier = Modifier.height(10.dp))
 
             // Quick Metrics Row
@@ -249,6 +257,20 @@ private fun ScoreHeroBanner(
                 MiniMetric(label = "Incorrect (-1)", value = "${report.incorrectCount}", color = NtaRedLight)
                 MiniMetric(label = "Negative Leaks", value = "-${report.totalNegativeMarksLost}", color = NtaRed)
                 MiniMetric(label = "Accuracy", value = "${String.format("%.1f", report.accuracyPercentage)}%", color = JeeAmber)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onEmailReport,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_email_report"),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black)
+            ) {
+                Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Email Forensic Report to jainvinit268@gmail.com", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
     }

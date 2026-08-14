@@ -33,6 +33,9 @@ interface JeeDao {
     @Query("DELETE FROM jee_tests WHERE testId = :testId")
     suspend fun deleteTestById(testId: String)
 
+    @Query("DELETE FROM jee_tests WHERE isSample = 1 OR testId IN ('quizrr_qpt_02', 'jee_2025_jan_shift1', 'jee_2024_apr_shift2')")
+    suspend fun deleteAllSampleTests()
+
     @Query("SELECT COUNT(*) FROM jee_tests")
     suspend fun getTestCount(): Int
 

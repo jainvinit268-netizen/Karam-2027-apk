@@ -72,73 +72,9 @@ class JeeRepository(context: Context) {
     }
 
     suspend fun initializeDefaultTestsIfEmpty() {
-        // Ensure the user's uploaded Quizrr QPT-02 test is always present
-        if (dao.getTestById("quizrr_qpt_02") == null) {
-            val qpt2Questions = SampleJeePapers.getQuizrrPartTest02()
-            val phyCount = qpt2Questions.count { it.subject == Subject.PHYSICS }
-            val cheCount = qpt2Questions.count { it.subject == Subject.CHEMISTRY }
-            val matCount = qpt2Questions.count { it.subject == Subject.MATHEMATICS }
-
-            val qpt2Test = JeeTestEntity(
-                testId = "quizrr_qpt_02",
-                title = "Quizrr Part Test - 02 (QPT-02) • Math, Phy, Chem",
-                sourcePdfName = "Quizrr_QPT_02_QuestionPaper_With_AnswerKey.pdf",
-                totalQuestions = qpt2Questions.size,
-                durationMinutes = 180,
-                createdAt = System.currentTimeMillis(),
-                questionsJson = converters.fromQuestionList(qpt2Questions),
-                isSample = true,
-                physicsQuestionsCount = phyCount,
-                chemistryQuestionsCount = cheCount,
-                mathsQuestionsCount = matCount,
-                tags = "Quizrr QPT-02, Official Answer Key, Full Trial Test, JEE Main 2026/2027"
-            )
-            insertTest(qpt2Test, qpt2Questions)
-        }
-
-        if (dao.getTestCount() > 1) return
-
-        val sample1Questions = SampleJeePapers.getSamplePaper2025Jan()
-        val phyCount1 = sample1Questions.count { it.subject == Subject.PHYSICS }
-        val cheCount1 = sample1Questions.count { it.subject == Subject.CHEMISTRY }
-        val matCount1 = sample1Questions.count { it.subject == Subject.MATHEMATICS }
-
-        val sample1 = JeeTestEntity(
-            testId = "jee_2025_jan_shift1",
-            title = "JEE Main 2025 Jan Session Shift 1 (Full Paper 1)",
-            sourcePdfName = "Official_NTA_JEE_2025_Jan_Shift1.pdf",
-            totalQuestions = sample1Questions.size,
-            durationMinutes = 180,
-            createdAt = System.currentTimeMillis() - 86400000L,
-            questionsJson = converters.fromQuestionList(sample1Questions),
-            isSample = true,
-            physicsQuestionsCount = phyCount1,
-            chemistryQuestionsCount = cheCount1,
-            mathsQuestionsCount = matCount1,
-            tags = "JEE Main, Jan 2025, Shift 1, NTA Official"
-        )
-        insertTest(sample1, sample1Questions)
-
-        val sample2Questions = SampleJeePapers.getSamplePaper2024Shift2()
-        val phyCount2 = sample2Questions.count { it.subject == Subject.PHYSICS }
-        val cheCount2 = sample2Questions.count { it.subject == Subject.CHEMISTRY }
-        val matCount2 = sample2Questions.count { it.subject == Subject.MATHEMATICS }
-
-        val sample2 = JeeTestEntity(
-            testId = "jee_2024_apr_shift2",
-            title = "JEE Main 2024 High-Yield Shift 2 Paper",
-            sourcePdfName = "NTA_JEE_Main_2024_Apr_Official.pdf",
-            totalQuestions = sample2Questions.size,
-            durationMinutes = 180,
-            createdAt = System.currentTimeMillis() - 172800000L,
-            questionsJson = converters.fromQuestionList(sample2Questions),
-            isSample = true,
-            physicsQuestionsCount = phyCount2,
-            chemistryQuestionsCount = cheCount2,
-            mathsQuestionsCount = matCount2,
-            tags = "JEE Main, Apr 2024, Shift 2, NTA Official"
-        )
-        insertTest(sample2, sample2Questions)
+        // Clean start: purge all legacy sample/demo tests from the database.
+        // The test library starts completely empty for the user to upload real JEE papers.
+        dao.deleteAllSampleTests()
     }
 
     fun parseQuestions(json: String): List<QuestionItem> {

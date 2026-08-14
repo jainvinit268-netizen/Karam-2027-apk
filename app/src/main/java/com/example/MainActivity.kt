@@ -45,6 +45,17 @@ class MainActivity : ComponentActivity() {
 fun JeeMainApp(viewModel: JeeViewModel) {
     val currentScreen by viewModel.currentScreen.collectAsState()
 
+    // Handle system back gesture / button across screens
+    androidx.activity.compose.BackHandler(enabled = currentScreen !is AppScreen.TestLibrary) {
+        when (currentScreen) {
+            is AppScreen.SplashInvocation -> viewModel.navigateTo(AppScreen.TestLibrary)
+            is AppScreen.ConvertPdf -> viewModel.navigateTo(AppScreen.TestLibrary)
+            is AppScreen.ForensicAnalysis -> viewModel.navigateTo(AppScreen.TestLibrary)
+            is AppScreen.CbtExam -> viewModel.setExitDialogOpen(true)
+            is AppScreen.TestLibrary -> { /* Default system minimize */ }
+        }
+    }
+
     Crossfade(targetState = currentScreen, label = "screen_crossfade") { screen ->
         when (screen) {
             is AppScreen.SplashInvocation -> OpeningBlessingScreen(viewModel = viewModel)
