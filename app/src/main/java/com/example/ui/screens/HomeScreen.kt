@@ -60,6 +60,7 @@ fun HomeScreen(
                 )
             )
         },
+        floatingActionButton = { JsonTestImportFab(viewModel = viewModel) },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -71,12 +72,7 @@ fun HomeScreen(
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { selectedSection = section },
-                        icon = {
-                            Icon(
-                                imageVector = section.icon,
-                                contentDescription = section.title
-                            )
-                        },
+                        icon = { Icon(imageVector = section.icon, contentDescription = section.title) },
                         label = {
                             Text(
                                 text = section.title,
@@ -120,10 +116,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Text(text = "🕉️", fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
