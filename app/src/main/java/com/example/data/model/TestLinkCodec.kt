@@ -3,14 +3,15 @@ package com.example.data.model
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-/** Builds a KARAM test-link URL containing an encoded saved test payload. */
+/** Builds a self-contained KARAM CBT test-link URI. */
 object TestLinkCodec {
-    private const val PREFIX = "https://karam-2027.test/t/"
+    private const val PREFIX = "karam://test/"
 
-    fun build(payload: TestLinkPayload): String = PREFIX + URLEncoder.encode(payload.encode(), StandardCharsets.UTF_8.toString())
+    fun build(payload: TestLinkPayload): String =
+        PREFIX + URLEncoder.encode(payload.encode(), StandardCharsets.UTF_8.toString())
 
     fun tokenFromUri(uri: android.net.Uri): String? {
-        if (uri.scheme != "https" || uri.host != "karam-2027.test") return null
+        if (uri.scheme != "karam" || uri.host != "test") return null
         return uri.pathSegments.lastOrNull()?.takeIf { it.isNotBlank() }
     }
 }
