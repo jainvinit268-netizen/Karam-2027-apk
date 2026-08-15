@@ -41,18 +41,36 @@ data class QuestionItem(
     val id: String,
     val questionNumber: Int,
     val subject: Subject,
-    val section: String = "Section A", // "Section A" (MCQ) or "Section B" (Numerical)
+    val section: String = "Section A",
     val type: QuestionType,
     val questionText: String,
     val imageUrl: String? = null,
-    val options: List<String> = emptyList(), // For MCQ: A, B, C, D
-    val correctAnswer: String, // e.g. "B" or "45"
+    val options: List<String> = emptyList(),
+    val correctAnswer: String,
     val chapter: String,
     val concept: String,
     val difficulty: Difficulty = Difficulty.MEDIUM,
     val solutionText: String,
     val idealTimeSeconds: Int = 120,
-    val youtubeSearchQuery: String = ""
+    val youtubeSearchQuery: String = "",
+    // Original PDF structure metadata. These are deliberately optional so old saved tests remain compatible.
+    val sourcePages: List<Int> = emptyList(),
+    val boundingRegions: List<BoundingRegion> = emptyList(),
+    val boundaryConfidence: Float = 0f,
+    val readingOrderConfidence: Float = 0f,
+    val subjectConfidence: Float = 0f,
+    val answerConfidence: Float = 0f,
+    val extractionWarnings: List<String> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class BoundingRegion(
+    val pageIndex: Int,
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val endPageIndex: Int = pageIndex
 )
 
 @JsonClass(generateAdapter = true)
@@ -102,8 +120,8 @@ data class ForensicReport(
     val calculationMistakesCount: Int,
     val wrongApproachCount: Int,
     val timeTrapsCount: Int,
-    val shouldHaveAttemptedQuestions: List<Int>, // Question numbers that were easy but unattempted
-    val shouldHaveSkippedQuestions: List<Int>, // Question numbers that wasted time and got wrong
+    val shouldHaveAttemptedQuestions: List<Int>,
+    val shouldHaveSkippedQuestions: List<Int>,
     val topLeakChapters: List<String>,
     val revisionActionPlan: List<String>,
     val nextTestStrategy: String
