@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - .github/source-link-patch-trigger.txt
+      - .github/source-link-patch-trigger*.txt
 
 permissions:
   contents: write
@@ -16,21 +16,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Patch KARAM source-link import
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           vm = Path('app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt')
           s = vm.read_text()
-
           if 'fun convertPdfFromUrl(' not in s:
               marker = '    fun convertFilesToCbt(\n'
-              fn = r'''    /** Download a direct PDF URL into the app cache and feed it through the exact same
-       * persistent PDF -> CBT pipeline used by the normal file picker. The generated test is
-       * still inserted into Room under one stable testId, so attempts/analysis remain attached.
-       */
+              fn = r'''    /** Download a direct PDF URL into the app cache and feed it through the same PDF -> CBT pipeline. */
       fun convertPdfFromUrl(
           testTitle: String,
           pdfUrl: String,
@@ -47,9 +41,7 @@ jobs:
               )
               try {
                   val normalized = pdfUrl.trim()
-                  require(normalized.startsWith("https://") || normalized.startsWith("http://")) {
-                      "Please paste a direct HTTP/HTTPS PDF link."
-                  }
+                  require(normalized.startsWith("https://") || normalized.startsWith("http://")) { "Please paste a direct HTTP/HTTPS PDF link." }
                   val connection = (java.net.URL(normalized).openConnection() as java.net.HttpURLConnection).apply {
                       requestMethod = "GET"
                       connectTimeout = 20_000
@@ -61,9 +53,7 @@ jobs:
                   connection.connect()
                   val code = connection.responseCode
                   require(code in 200..299) { "Source link returned HTTP $code." }
-                  connection.inputStream.use { input ->
-                      java.io.FileOutputStream(file).use { output -> input.copyTo(output) }
-                  }
+                  connection.inputStream.use { input -> java.io.FileOutputStream(file).use { output -> input.copyTo(output) } }
                   connection.disconnect()
                   require(file.length() > 100) { "The source link returned an empty or invalid file." }
                   convertFilesToCbt(
@@ -76,76 +66,36 @@ jobs:
                       pdfFileName = file.name
                   )
               } catch (e: Exception) {
-                  _conversionState.value = ConversionUiState(
-                      isProcessing = false,
-                      errorMessage = "Source-link import failed: ${e.localizedMessage ?: "invalid link"}"
-                  )
+                  _conversionState.value = ConversionUiState(isProcessing = false, errorMessage = "Source-link import failed: ${e.localizedMessage ?: "invalid link"}")
               }
           }
       }
 
 '''
-              if marker not in s:
-                  raise SystemExit('ViewModel insertion marker not found')
+              if marker not in s: raise SystemExit('ViewModel marker not found')
               vm.write_text(s.replace(marker, fn + marker, 1))
 
           ui = Path('app/src/main/java/com/example/ui/components/PdfToCbtSection.kt')
           s = ui.read_text()
-
           if 'var sourceLink by remember' not in s:
               s = s.replace('    var selectedAnswerKeyFileName by remember { mutableStateOf<String?>(null) }\n', '    var selectedAnswerKeyFileName by remember { mutableStateOf<String?>(null) }\n    var sourceLink by remember { mutableStateOf("") }\n', 1)
-
               card = r'''        // OPTIONAL: DIRECT SOURCE LINK
-          Card(
-              modifier = Modifier.fillMaxWidth(),
-              shape = RoundedCornerShape(16.dp),
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              border = BorderStroke(1.dp, JeeCyan.copy(alpha = 0.35f))
-          ) {
-              Column(
-                  modifier = Modifier.padding(16.dp),
-                  verticalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                  Text(
-                      text = "SOURCE LINK (OPTIONAL)",
-                      fontWeight = FontWeight.Bold,
-                      style = MaterialTheme.typography.titleSmall
-                  )
-                  Text(
-                      text = "Paste a direct PDF URL. The downloaded PDF uses the same extraction pipeline and the generated CBT is saved in this app.",
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                  OutlinedTextField(
-                      value = sourceLink,
-                      onValueChange = { sourceLink = it },
-                      label = { Text("Paste direct PDF / KARAM source link") },
-                      placeholder = { Text("https://example.com/paper.pdf") },
-                      modifier = Modifier.fillMaxWidth().testTag("input_source_link"),
-                      singleLine = true,
-                      trailingIcon = {
-                          if (sourceLink.isNotBlank()) {
-                              IconButton(onClick = { sourceLink = "" }) {
-                                  Icon(Icons.Default.Clear, contentDescription = "Clear source link")
-                              }
-                          }
-                      }
-                  )
+          Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, JeeCyan.copy(alpha = 0.35f))) {
+              Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  Text("SOURCE LINK (OPTIONAL)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                  Text("Paste a direct PDF URL. It uses the same extraction pipeline and the generated CBT is saved in this app.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  OutlinedTextField(value = sourceLink, onValueChange = { sourceLink = it }, label = { Text("Paste direct PDF / KARAM source link") }, placeholder = { Text("https://example.com/paper.pdf") }, modifier = Modifier.fillMaxWidth().testTag("input_source_link"), singleLine = true)
               }
           }
 
 '''
               marker = '        // STEP 1: QUESTION PAPER\n'
-              if marker not in s:
-                  raise SystemExit('UI insertion marker not found')
+              if marker not in s: raise SystemExit('UI marker not found')
               s = s.replace(marker, card + marker, 1)
-
               old = '        val hasInputs = selectedPdfUri != null || selectedPdfFileName != null || questionPaperText.isNotBlank()\n'
               new = '        val hasInputs = sourceLink.isNotBlank() || selectedPdfUri != null || selectedPdfFileName != null || questionPaperText.isNotBlank()\n'
-              if old not in s:
-                  raise SystemExit('hasInputs marker not found')
+              if old not in s: raise SystemExit('input marker not found')
               s = s.replace(old, new, 1)
-
               old_click = '''                viewModel.convertFilesToCbt(
                     testTitle = resolvedTitle,
                     questionPdfUri = selectedPdfUri,
@@ -156,44 +106,20 @@ jobs:
                     pdfFileName = selectedPdfFileName ?: "Uploaded_JEE_Paper.pdf"
                 )'''
               new_click = '''                if (sourceLink.isNotBlank()) {
-                    viewModel.convertPdfFromUrl(
-                        testTitle = resolvedTitle,
-                        pdfUrl = sourceLink,
-                        answerKeyUri = selectedAnswerKeyUri,
-                        fallbackAnswerText = answerKeyText,
-                        durationMinutes = finalDuration
-                    )
+                    viewModel.convertPdfFromUrl(testTitle = resolvedTitle, pdfUrl = sourceLink, answerKeyUri = selectedAnswerKeyUri, fallbackAnswerText = answerKeyText, durationMinutes = finalDuration)
                 } else {
-                    viewModel.convertFilesToCbt(
-                        testTitle = resolvedTitle,
-                        questionPdfUri = selectedPdfUri,
-                        answerKeyUri = selectedAnswerKeyUri,
-                        fallbackQuestionText = questionPaperText,
-                        fallbackAnswerText = answerKeyText,
-                        durationMinutes = finalDuration,
-                        pdfFileName = selectedPdfFileName ?: "Uploaded_JEE_Paper.pdf"
-                    )
+                    viewModel.convertFilesToCbt(testTitle = resolvedTitle, questionPdfUri = selectedPdfUri, answerKeyUri = selectedAnswerKeyUri, fallbackQuestionText = questionPaperText, fallbackAnswerText = answerKeyText, durationMinutes = finalDuration, pdfFileName = selectedPdfFileName ?: "Uploaded_JEE_Paper.pdf")
                 }'''
-              if old_click not in s:
-                  raise SystemExit('generate call marker not found')
-              s = s.replace(old_click, new_click, 1)
-              ui.write_text(s)
-
-          print('Source-link patch applied')
+              if old_click not in s: raise SystemExit('generate marker not found')
+              ui.write_text(s.replace(old_click, new_click, 1))
           PY
-
-      - name: Commit patch
+      - name: Commit patch and remove one-time files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt app/src/main/java/com/example/ui/components/PdfToCbtSection.kt
-          git diff --cached --quiet && exit 0
-          git commit -m "feat: persistent direct source-link CBT import"
-          git push
-
-      - name: Remove one-time patch files
-        if: success()
-        run: |
-          git rm .github/workflows/apply-source-link-patch.yml .github/source-link-patch-trigger.txt
-          git commit -m "chore: remove one-time source-link patch workflow"
-          git push
+          git diff --cached --quiet || git commit -m "feat: persistent direct source-link CBT import"
+          git push || true
+          git rm .github/workflows/apply-source-link-patch.yml .github/source-link-patch-trigger*.txt || true
+          git diff --cached --quiet || git commit -m "chore: remove one-time source-link patch workflow"
+          git push || true
