@@ -2,7 +2,9 @@ name: Apply saved CBT test link
 
 on:
   push:
-    branches: [feature/test-link]
+    branches:
+      - main
+      - feature/test-link
   workflow_dispatch:
 
 permissions:
