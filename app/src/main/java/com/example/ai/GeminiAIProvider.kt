@@ -3,7 +3,7 @@ package com.example.ai
 import android.content.Context
 import com.example.data.ai.AiConnectionStatus
 import com.example.data.ai.AiKeyManager
-import com.example.data.ai.AiKeySource
+import com.example.data.ai.DocumentProcessingGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -15,61 +15,62 @@ class GeminiAIProvider(
     override val name: String = "Gemini API (Google AI Studio)"
     override val providerType: AIProviderType = AIProviderType.GEMINI_API
 
-    override suspend fun isConfigured(): Boolean {
-        return !aiKeyManager.getActiveApiKey().isNullOrBlank()
-    }
+    override suspend fun isConfigured(): Boolean = !aiKeyManager.getActiveApiKey().isNullOrBlank()
 
-    override suspend fun testConnection(): AiConnectionStatus {
-        return aiKeyManager.testConnection()
-    }
+    override suspend fun testConnection(): AiConnectionStatus = aiKeyManager.testConnection()
 
     override suspend fun processDocument(
         params: DocumentProcessingParams,
         onProgress: (ProcessingProgress) -> Unit
     ): DocumentProcessingResult = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-        val apiKey = aiKeyManager.getActiveApiKey()
-
-        if (apiKey.isNullOrBlank()) {
-            onProgress(
-                ProcessingProgress(
-                    step = ProcessingStep.ANALYZING_PDF,
-                    progressPercent = 30,
-                    message = "No Gemini API Key detected. Using high-precision local layout parser...",
-                    totalPages = params.totalPages
-                )
+        if (!isConfigured()) {
+            return@withContext DocumentProcessingResult(
+                success = false,
+                testTitle = params.testTitle,
+                questions = emptyList(),
+                providerUsed = AIProviderType.GEMINI_API,
+                errorMessage = "Verified PDF extraction requires a configured Gemini API key."
             )
-            val fallbackProvider = LocalLayoutAIProvider()
-            return@withContext fallbackProvider.processDocument(params, onProgress)
         }
 
-        // Delegate to enhanced GeminiJeeExtractor with live progress callbacks
-        val result = GeminiJeeExtractor.extractJeePaperWithProgress(
+        val raw = StructuredJeeDocumentExtractor.extract(
             context = context,
-            questionPaperContent = params.questionPaperText,
-            answerKeyContent = params.answerKeyText,
+            questionText = params.questionPaperText,
+            answerKeyText = params.answerKeyText,
             testTitle = params.testTitle,
             pageImagesBase64 = params.pageImagesBase64,
             totalPages = params.totalPages,
-            targetQuestionCount = params.targetQuestionCount,
             onProgress = onProgress
         )
 
         val elapsed = (System.currentTimeMillis() - startTime) / 1000
-        val validatedCount = result.questions.count { it.correctAnswer.isNotBlank() && it.questionText.length > 10 }
-
-        DocumentProcessingResult(
-            success = result.success,
-            testTitle = result.testTitle,
-            questions = result.questions,
-            flaggedQuestions = result.flaggedQuestions,
-            providerUsed = if (result.aiUsed) AIProviderType.GEMINI_API else AIProviderType.LOCAL_LAYOUT_ENGINE,
-            statusMessage = result.statusMessage,
-            errorMessage = result.errorMessage,
+        val result = DocumentProcessingResult(
+            success = raw.success,
+            testTitle = raw.testTitle,
+            questions = raw.questions,
+            flaggedQuestions = raw.flaggedQuestions,
+            providerUsed = AIProviderType.GEMINI_API,
+            statusMessage = raw.statusMessage,
+            errorMessage = raw.errorMessage,
             elapsedSeconds = elapsed,
-            diagramsCount = params.pageImagesBase64.size,
-            validatedCount = validatedCount,
-            ocrWarningsCount = result.flaggedQuestions.size
+            diagramsCount = raw.questions.count { it.boundingRegions.isNotEmpty() },
+            validatedCount = raw.questions.count { it.questionText.length >= 12 && it.boundingRegions.isNotEmpty() && it.correctAnswer.isNotBlank() },
+            ocrWarningsCount = raw.flaggedQuestions.size,
+            pdfType = params.pdfType
         )
+
+        onProgress(
+            ProcessingProgress(
+                step = ProcessingStep.VALIDATING,
+                progressPercent = 94,
+                message = "Running deterministic document-structure safety gate...",
+                totalPages = params.totalPages,
+                questionsDetected = result.questions.size,
+                pdfType = params.pdfType
+            )
+        )
+
+        DocumentProcessingGate.apply(result, params.targetQuestionCount)
     }
 }

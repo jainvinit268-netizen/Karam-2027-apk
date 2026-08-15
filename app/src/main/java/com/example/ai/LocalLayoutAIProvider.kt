@@ -1,6 +1,7 @@
 package com.example.ai
 
 import com.example.data.ai.AiConnectionStatus
+import com.example.data.ai.DocumentProcessingGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -10,39 +11,19 @@ class LocalLayoutAIProvider : AIProvider {
 
     override suspend fun isConfigured(): Boolean = true
 
-    override suspend fun testConnection(): AiConnectionStatus {
-        return AiConnectionStatus.Success(
-            latencyMs = 5,
-            model = "Local Layout Engine",
-            message = "Local Document Layout Engine is ready on device."
-        )
-    }
+    override suspend fun testConnection(): AiConnectionStatus = AiConnectionStatus.Success(
+        latencyMs = 5,
+        model = "Local Layout Engine",
+        message = "Local Document Layout Engine is ready on device."
+    )
 
     override suspend fun processDocument(
         params: DocumentProcessingParams,
         onProgress: (ProcessingProgress) -> Unit
     ): DocumentProcessingResult = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.ANALYZING_PDF,
-                progressPercent = 30,
-                message = "Parsing document text tokens & identifying question blocks...",
-                totalPages = params.totalPages,
-                pdfType = params.pdfType
-            )
-        )
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.DETECTING_QUESTIONS,
-                progressPercent = 50,
-                message = "Detecting question boundaries, subject headers & option markers...",
-                totalPages = params.totalPages,
-                pdfType = params.pdfType
-            )
-        )
+        onProgress(ProcessingProgress(ProcessingStep.ANALYZING_PDF, 30, "Parsing document structure...", totalPages = params.totalPages, pdfType = params.pdfType))
+        onProgress(ProcessingProgress(ProcessingStep.DETECTING_QUESTIONS, 50, "Detecting question boundaries...", totalPages = params.totalPages, pdfType = params.pdfType))
 
         val rawResult = GeminiJeeExtractor.parseAlgorithmicFallback(
             questionPaperContent = params.questionPaperText,
@@ -50,55 +31,23 @@ class LocalLayoutAIProvider : AIProvider {
             testTitle = params.testTitle
         )
 
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.READING_ANSWER_KEY,
-                progressPercent = 70,
-                message = "Parsing Official Answer Key tokens & keys...",
-                totalPages = params.totalPages,
-                questionsDetected = rawResult.questions.size,
-                pdfType = params.pdfType
-            )
-        )
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.MAPPING_ANSWERS,
-                progressPercent = 85,
-                message = "Mapping Question ↔ Official Answer pairs (${rawResult.questions.size} mapped)...",
-                totalPages = params.totalPages,
-                questionsDetected = rawResult.questions.size,
-                pdfType = params.pdfType
-            )
-        )
-
-        onProgress(
-            ProcessingProgress(
-                step = ProcessingStep.VALIDATING,
-                progressPercent = 92,
-                message = "Validating numbering, duplicates, and option integrity...",
-                totalPages = params.totalPages,
-                questionsDetected = rawResult.questions.size,
-                pdfType = params.pdfType
-            )
-        )
-
         val elapsed = (System.currentTimeMillis() - startTime) / 1000
-        val validatedCount = rawResult.questions.count { it.correctAnswer.isNotBlank() }
-
-        DocumentProcessingResult(
-            success = rawResult.questions.isNotEmpty(),
+        val result = DocumentProcessingResult(
+            success = rawResult.success,
             testTitle = rawResult.testTitle,
             questions = rawResult.questions,
             flaggedQuestions = rawResult.flaggedQuestions,
             providerUsed = AIProviderType.LOCAL_LAYOUT_ENGINE,
-            statusMessage = "Extracted ${rawResult.questions.size} questions using local layout engine.",
-            errorMessage = if (rawResult.questions.isEmpty()) "No questions detected in the provided content." else null,
+            statusMessage = "Local parser completed; running safety validation.",
+            errorMessage = rawResult.errorMessage,
             elapsedSeconds = elapsed,
-            diagramsCount = params.pageImagesBase64.size,
-            validatedCount = validatedCount,
+            diagramsCount = 0,
+            validatedCount = 0,
             ocrWarningsCount = rawResult.flaggedQuestions.size,
             pdfType = params.pdfType
         )
+
+        onProgress(ProcessingProgress(ProcessingStep.VALIDATING, 92, "Running deterministic document-structure safety gate...", totalPages = params.totalPages, questionsDetected = result.questions.size, pdfType = params.pdfType))
+        DocumentProcessingGate.apply(result, params.targetQuestionCount)
     }
 }
