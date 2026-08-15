@@ -34,10 +34,7 @@ import com.example.ui.viewmodel.JeeViewModel
 import kotlinx.coroutines.launch
 
 @Composable
-fun TestLibrarySection(
-    viewModel: JeeViewModel,
-    modifier: Modifier = Modifier
-) {
+fun TestLibrarySection(viewModel: JeeViewModel, modifier: Modifier = Modifier) {
     val tests by viewModel.allTests.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
@@ -46,15 +43,13 @@ fun TestLibrarySection(
     var importing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val jsonPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
+    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             importing = true
             importMessage = null
             try {
-                val testId = DirectJsonTestImporter.import(viewModel.context, uri)
+                val testId = DirectJsonTestImporter.import(viewModel.getApplication(), uri)
                 importMessage = "Test imported successfully: $testId"
             } catch (e: Exception) {
                 importMessage = "JSON import failed: ${e.message ?: "Invalid test JSON"}"
@@ -65,11 +60,9 @@ fun TestLibrarySection(
     }
 
     val filterOptions = listOf("All", "Full Syllabus", "Physics", "Chemistry", "Maths")
-
     val filteredTests = remember(tests, searchQuery, selectedFilter) {
         tests.filter { test ->
-            val matchesQuery = test.title.contains(searchQuery, ignoreCase = true) ||
-                    (test.tags?.contains(searchQuery, ignoreCase = true) == true)
+            val matchesQuery = test.title.contains(searchQuery, ignoreCase = true) || test.tags?.contains(searchQuery, ignoreCase = true) == true
             val matchesFilter = when (selectedFilter) {
                 "All" -> true
                 "Full Syllabus" -> test.totalQuestions >= 50
@@ -82,29 +75,14 @@ fun TestLibrarySection(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search JEE Main papers, tests...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
-                        }
-                    }
-                },
+                trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear") } },
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f).testTag("test_search_input")
@@ -113,40 +91,27 @@ fun TestLibrarySection(
                 onClick = { jsonPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
                 enabled = !importing,
                 modifier = Modifier.size(52.dp).testTag("btn_import_json_test")
-            ) {
-                Icon(Icons.Default.UploadFile, contentDescription = "Import JSON Test")
-            }
+            ) { Icon(Icons.Default.UploadFile, contentDescription = "Import JSON Test") }
         }
 
         importMessage?.let { message ->
             AssistChip(
                 onClick = { importMessage = null },
                 label = { Text(message, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                leadingIcon = {
-                    Icon(
-                        if (message.startsWith("Test imported")) Icons.Default.CheckCircle else Icons.Default.Error,
-                        contentDescription = null
-                    )
-                },
+                leadingIcon = { Icon(if (message.startsWith("Test imported")) Icons.Default.CheckCircle else Icons.Default.Error, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth().testTag("json_import_status")
             )
         }
 
         if (tests.isNotEmpty()) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 items(filterOptions) { filter ->
                     val isSelected = selectedFilter == filter
                     FilterChip(
                         selected = isSelected,
                         onClick = { selectedFilter = filter },
                         label = { Text(filter, fontSize = 12.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = JeeCyan.copy(alpha = 0.25f),
-                            selectedLabelColor = JeeCyan
-                        ),
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = JeeCyan.copy(alpha = 0.25f), selectedLabelColor = JeeCyan),
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.testTag("filter_chip_$filter")
                     )
@@ -155,148 +120,77 @@ fun TestLibrarySection(
         }
 
         if (filteredTests.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.Default.Description, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(48.dp))
+                        Text(text = if (tests.isEmpty()) "Test Library is Empty" else "No tests match your filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            text = if (tests.isEmpty()) "Test Library is Empty" else "No tests match your filter",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (tests.isEmpty())
-                                "Upload a ready-made JEE CBT JSON from any website, AI tool, or script, or use the PDF + official key workflow."
-                            else
-                                "Clear filters or import a new JSON test.",
+                            text = if (tests.isEmpty()) "Upload a ready-made JEE CBT JSON from any website, AI tool, or script, or use the PDF + official key workflow." else "Clear filters or import a new JSON test.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 12.dp)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = { jsonPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
-                                enabled = !importing,
-                                colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.testTag("btn_empty_import_json")
-                            ) {
-                                Icon(Icons.Default.DataObject, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Upload JSON", fontWeight = FontWeight.Bold)
+                            Button(onClick = { jsonPicker.launch(arrayOf("application/json", "text/json", "text/plain")) }, enabled = !importing, colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_import_json")) {
+                                Icon(Icons.Default.DataObject, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("Upload JSON", fontWeight = FontWeight.Bold)
                             }
-                            Button(
-                                onClick = { viewModel.navigateTo(AppScreen.ConvertPdf) },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.testTag("btn_empty_upload_pdf")
-                            ) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("PDF + Key")
+                            Button(onClick = { viewModel.navigateTo(AppScreen.ConvertPdf) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_upload_pdf")) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("PDF + Key")
                             }
                         }
                     }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
+            LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
                 items(filteredTests, key = { it.testId }) { test ->
-                    TestItemCard(
-                        test = test,
-                        onQuickStart = { viewModel.startExam(test.testId) },
-                        onCustomLaunch = { testForCustomLaunch = test },
-                        onDelete = { viewModel.deleteTest(test.testId) }
-                    )
+                    TestItemCard(test = test, onQuickStart = { viewModel.startExam(test.testId) }, onCustomLaunch = { testForCustomLaunch = test }, onDelete = { viewModel.deleteTest(test.testId) })
                 }
             }
         }
     }
 
-    testForCustomLaunch?.let { test: JeeTestEntity ->
+    testForCustomLaunch?.let { test ->
         CustomTestLaunchDialog(
             test = test,
             onDismiss = { testForCustomLaunch = null },
             onLaunch = { duration: Int, count: Int?, subj: Subject? ->
                 testForCustomLaunch = null
-                viewModel.startExamWithCustomConfig(
-                    testId = test.testId,
-                    customMinutes = duration,
-                    questionLimit = count,
-                    subjectFilter = subj
-                )
+                viewModel.startExamWithCustomConfig(testId = test.testId, customMinutes = duration, questionLimit = count, subjectFilter = subj)
             }
         )
     }
 }
 
 @Composable
-private fun TestItemCard(
-    test: JeeTestEntity,
-    onQuickStart: () -> Unit,
-    onCustomLaunch: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth().testTag("test_card_${test.testId}")
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
+private fun TestItemCard(test: JeeTestEntity, onQuickStart: () -> Unit, onCustomLaunch: () -> Unit, onDelete: () -> Unit) {
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth().testTag("test_card_${test.testId}")) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = test.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(test.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = test.tags ?: "JEE Main CBT Paper", style = MaterialTheme.typography.labelSmall, color = JeeCyan)
+                    Text(test.tags ?: "JEE Main CBT Paper", style = MaterialTheme.typography.labelSmall, color = JeeCyan)
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Test", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Test", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetadataBadge(icon = Icons.Default.HelpOutline, label = "${test.totalQuestions} Questions")
-                MetadataBadge(icon = Icons.Default.Timer, label = "${test.durationMinutes} mins")
-                MetadataBadge(icon = Icons.Default.MilitaryTech, label = "+4 / -1 Marking")
+                MetadataBadge(Icons.Default.HelpOutline, "${test.totalQuestions} Questions")
+                MetadataBadge(Icons.Default.Timer, "${test.durationMinutes} mins")
+                MetadataBadge(Icons.Default.MilitaryTech, "+4 / -1 Marking")
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SubjectBadge(subject = "Physics", count = test.physicsQuestionsCount, color = NtaRedLight)
-                SubjectBadge(subject = "Chemistry", count = test.chemistryQuestionsCount, color = NtaGreenLight)
-                SubjectBadge(subject = "Maths", count = test.mathsQuestionsCount, color = JeeCyan)
+                SubjectBadge("Physics", test.physicsQuestionsCount, NtaRedLight)
+                SubjectBadge("Chemistry", test.chemistryQuestionsCount, NtaGreenLight)
+                SubjectBadge("Maths", test.mathsQuestionsCount, JeeCyan)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onCustomLaunch, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).testTag("btn_custom_launch_${test.testId}")) {
-                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Customize", fontSize = 12.sp)
+                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp)); Text("Customize", fontSize = 12.sp)
                 }
                 Button(onClick = onQuickStart, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black), modifier = Modifier.weight(1.3f).testTag("btn_start_test_${test.testId}")) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Start CBT Exam", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp)); Text("Start CBT Exam", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -306,8 +200,8 @@ private fun TestItemCard(
 @Composable
 private fun MetadataBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)).padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
     }
 }
 
@@ -316,6 +210,6 @@ private fun SubjectBadge(subject: String, count: Int, color: Color) {
     if (count <= 0) return
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
         Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(color))
-        Text(text = "$subject: $count", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = color)
+        Text("$subject: $count", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
