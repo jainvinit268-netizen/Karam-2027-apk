@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
@@ -19,10 +19,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -36,10 +36,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.TestLinkImporter
 import com.example.ui.theme.JeeCyan
 import com.example.ui.theme.NtaGreenLight
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.JeeViewModel
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun LinkToCbtSection(
@@ -47,9 +51,10 @@ fun LinkToCbtSection(
     modifier: Modifier = Modifier
 ) {
     val conversionState by viewModel.conversionState.collectAsState()
-    var pdfUrl by remember { mutableStateOf("") }
-    var testTitle by remember { mutableStateOf("Linked JEE Paper") }
-    var duration by remember { mutableStateOf("180") }
+    val scope = rememberCoroutineScope()
+    var testLink by remember { mutableStateOf("") }
+    var importing by remember { mutableStateOf(false) }
+    var importError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -66,23 +71,17 @@ fun LinkToCbtSection(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = JeeCyan.copy(alpha = 0.18f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Link,
-                        contentDescription = null,
-                        tint = JeeCyan,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = JeeCyan,
+                    modifier = Modifier.size(32.dp)
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text("Generate CBT from Link", fontWeight = FontWeight.Bold, color = JeeCyan)
+                    Text("Open Saved CBT Test", fontWeight = FontWeight.Bold, color = JeeCyan)
                     Text(
-                        "Paste the direct PDF link. The existing Gemini extraction, test saving, analysis and history stay unchanged.",
+                        "Paste the KARAM test link generated for you. The saved test opens directly in the existing NTA-style CBT flow.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -91,90 +90,65 @@ fun LinkToCbtSection(
         }
 
         OutlinedTextField(
-            value = testTitle,
-            onValueChange = { testTitle = it },
-            label = { Text("Test Name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("link_test_title")
-        )
-
-        OutlinedTextField(
-            value = pdfUrl,
-            onValueChange = { pdfUrl = it },
-            label = { Text("Paste PDF Link") },
-            placeholder = { Text("https://.../paper.pdf") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("pdf_link_input"),
+            value = testLink,
+            onValueChange = {
+                testLink = it
+                importError = null
+            },
+            label = { Text("Paste KARAM Test Link") },
+            placeholder = { Text("karam://test/...") },
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth().testTag("test_link_input"),
             leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
             trailingIcon = {
-                if (pdfUrl.isNotBlank()) {
-                    androidx.compose.material3.IconButton(onClick = { pdfUrl = "" }) {
+                if (testLink.isNotBlank()) {
+                    androidx.compose.material3.IconButton(onClick = { testLink = "" }) {
                         Icon(Icons.Default.Clear, contentDescription = "Clear link")
                     }
                 }
             }
         )
 
-        OutlinedTextField(
-            value = duration,
-            onValueChange = { if (it.all(Char::isDigit) && it.length <= 4) duration = it },
-            label = { Text("Exam Duration (minutes)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("link_duration_input")
-        )
-
         Button(
             onClick = {
-                viewModel.convertPdfFromUrl(
-                    testTitle = testTitle.ifBlank { "Linked JEE Paper" },
-                    pdfUrl = pdfUrl.trim(),
-                    answerKeyUri = null,
-                    fallbackAnswerText = "",
-                    durationMinutes = duration.toIntOrNull()?.coerceIn(1, 600) ?: 180
-                )
+                val raw = testLink.trim()
+                scope.launch {
+                    importing = true
+                    importError = null
+                    try {
+                        require(raw.startsWith("karam://test/")) { "Invalid KARAM test link." }
+                        val testId = TestLinkImporter.import(viewModel.getApplicationContext(), Uri.parse(raw))
+                        require(!testId.isNullOrBlank()) { "Test link could not be imported." }
+                        viewModel.resetConversionState()
+                        viewModel.navigateTo(AppScreen.CbtExam(testId))
+                    } catch (e: Exception) {
+                        importError = e.localizedMessage ?: "Unable to open this test link."
+                    } finally {
+                        importing = false
+                    }
+                }
             },
-            enabled = pdfUrl.trim().startsWith("http://") || pdfUrl.trim().startsWith("https://"),
-            modifier = Modifier.fillMaxWidth().testTag("generate_cbt_from_link"),
+            enabled = !importing && testLink.trim().startsWith("karam://test/"),
+            modifier = Modifier.fillMaxWidth().testTag("open_test_link"),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black)
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("GENERATE CBT", fontWeight = FontWeight.Bold)
-        }
-
-        if (conversionState.isProcessing) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = JeeCyan.copy(alpha = 0.10f))
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp), color = JeeCyan)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Generating CBT...", fontWeight = FontWeight.Bold)
-                        Text(
-                            conversionState.progressMessage.ifBlank { "Downloading and analysing PDF..." },
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+            if (importing) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black)
+            } else {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(if (importing) "OPENING TEST..." else "OPEN TEST", fontWeight = FontWeight.Bold)
         }
 
-        if (conversionState.errorMessage?.isNotBlank() == true) {
+        importError?.let {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF4A1720))
             ) {
-                Text(
-                    "${conversionState.errorMessage}",
-                    modifier = Modifier.padding(16.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text(it, modifier = Modifier.padding(16.dp), color = Color.White)
             }
         }
 
@@ -185,12 +159,10 @@ fun LinkToCbtSection(
                     viewModel.resetConversionState()
                     viewModel.navigateTo(AppScreen.CbtExam(id))
                 },
-                modifier = Modifier.fillMaxWidth().testTag("launch_linked_cbt"),
+                modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = NtaGreenLight, contentColor = Color.Black),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
                 Text("LAUNCH CBT", fontWeight = FontWeight.Bold)
             }
         }
