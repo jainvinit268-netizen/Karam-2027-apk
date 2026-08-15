@@ -53,6 +53,10 @@ jobs:
           test -s app/build/outputs/apk/debug/app-debug.apk
           echo "APK verified: $(stat -c%s app/build/outputs/apk/debug/app-debug.apk) bytes"
 
+      - name: Generate and validate QPT-02 KARAM test link
+        run: |
+          gradle :app:testDebugUnitTest --tests com.example.Qpt2TestLinkTest --stacktrace --no-daemon
+
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
