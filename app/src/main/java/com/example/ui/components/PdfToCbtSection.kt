@@ -49,6 +49,7 @@ fun PdfToCbtSection(
 
     var selectedAnswerKeyUri by remember { mutableStateOf<Uri?>(null) }
     var selectedAnswerKeyFileName by remember { mutableStateOf<String?>(null) }
+    var sourceLink by remember { mutableStateOf("") }
 
     var questionPaperText by remember { mutableStateOf("") }
     var answerKeyText by remember { mutableStateOf("") }
@@ -153,6 +154,38 @@ fun PdfToCbtSection(
                         onDismiss = { showAiSettings = false }
                     )
                 }
+            }
+        }
+
+        // OPTIONAL DIRECT PDF SOURCE LINK
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, JeeCyan.copy(alpha = 0.35f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("DIRECT PDF LINK (OPTIONAL)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Paste a direct PDF URL. The CBT is generated through the same pipeline and saved in Test Library.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = sourceLink,
+                    onValueChange = { sourceLink = it },
+                    label = { Text("Direct PDF URL") },
+                    placeholder = { Text("https://example.com/paper.pdf") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_source_link"),
+                    singleLine = true,
+                    trailingIcon = {
+                        if (sourceLink.isNotBlank()) {
+                            IconButton(onClick = { sourceLink = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear link")
+                            }
+                        }
+                    }
+                )
             }
         }
 
@@ -500,21 +533,31 @@ fun PdfToCbtSection(
         }
 
         // GENERATE BUTTON
-        val hasInputs = selectedPdfUri != null || selectedPdfFileName != null || questionPaperText.isNotBlank()
+        val hasInputs = sourceLink.isNotBlank() || selectedPdfUri != null || selectedPdfFileName != null || questionPaperText.isNotBlank()
         val finalDuration = if (isCustomDuration) (customDurationInput.toIntOrNull() ?: 180) else selectedDurationMinutes
 
         Button(
             onClick = {
                 val resolvedTitle = if (testTitle.isNotBlank()) testTitle else (selectedPdfFileName?.substringBeforeLast(".") ?: "Uploaded JEE Paper")
-                viewModel.convertFilesToCbt(
-                    testTitle = resolvedTitle,
-                    questionPdfUri = selectedPdfUri,
-                    answerKeyUri = selectedAnswerKeyUri,
-                    fallbackQuestionText = questionPaperText,
-                    fallbackAnswerText = answerKeyText,
-                    durationMinutes = finalDuration,
-                    pdfFileName = selectedPdfFileName ?: "Uploaded_JEE_Paper.pdf"
-                )
+                if (sourceLink.isNotBlank()) {
+                    viewModel.convertPdfFromUrl(
+                        testTitle = resolvedTitle,
+                        pdfUrl = sourceLink,
+                        answerKeyUri = selectedAnswerKeyUri,
+                        fallbackAnswerText = answerKeyText,
+                        durationMinutes = finalDuration
+                    )
+                } else {
+                    viewModel.convertFilesToCbt(
+                        testTitle = resolvedTitle,
+                        questionPdfUri = selectedPdfUri,
+                        answerKeyUri = selectedAnswerKeyUri,
+                        fallbackQuestionText = questionPaperText,
+                        fallbackAnswerText = answerKeyText,
+                        durationMinutes = finalDuration,
+                        pdfFileName = selectedPdfFileName ?: "Uploaded_JEE_Paper.pdf"
+                    )
+                }
             },
             enabled = hasInputs && !conversionState.isProcessing,
             modifier = Modifier

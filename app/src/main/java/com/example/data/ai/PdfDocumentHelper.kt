@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
 import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 
@@ -63,7 +64,7 @@ object PdfDocumentHelper {
 
         var directText = ""
         try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            (if (uri.scheme == "file") FileInputStream(File(uri.path ?: return@withContext ExtractedDocument(fileName, "", 0, emptyList(), PdfSourceType.SCANNED_IMAGE))) else context.contentResolver.openInputStream(uri))?.use { stream ->
                 val bytes = stream.readBytes()
                 val candidateText = String(bytes, Charsets.UTF_8)
                 if (!candidateText.startsWith("%PDF") && candidateText.count { it.isLetterOrDigit() || it.isWhitespace() } > candidateText.length * 0.6) {
@@ -85,7 +86,7 @@ object PdfDocumentHelper {
         var detectedPdfType = PdfSourceType.NATIVE_TEXT
 
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            (if (uri.scheme == "file") FileInputStream(File(uri.path ?: return@withContext ExtractedDocument(fileName, "", 0, emptyList(), PdfSourceType.SCANNED_IMAGE))) else context.contentResolver.openInputStream(uri))?.use { input ->
                 FileOutputStream(tempFile).use { output -> input.copyTo(output) }
             }
 

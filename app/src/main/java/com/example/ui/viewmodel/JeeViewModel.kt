@@ -33,6 +33,7 @@ import com.example.data.model.Subject
 import com.example.data.repository.JeeRepository
 import com.example.data.sample.SampleJeePapers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -243,6 +244,69 @@ class JeeViewModel(application: Application) : AndroidViewModel(application) {
         lastConversionParams = params
         lastResolvedPdfName = pdfFileName
         executeDocumentConversion(params, pdfFileName)
+    }
+
+    /** Imports a directly accessible PDF URL through the existing persistent PDF->CBT pipeline. */
+    fun convertPdfFromUrl(
+        testTitle: String,
+        pdfUrl: String,
+        answerKeyUri: android.net.Uri?,
+        fallbackAnswerText: String,
+        durationMinutes: Int = 180
+    ) {
+        activeQuestionPdfUri = null
+        conversionJob?.cancel()
+        conversionTickerJob?.cancel()
+        conversionJob = viewModelScope.launch(Dispatchers.IO) {
+            _conversionState.value = ConversionUiState(
+                isProcessing = true,
+                currentStep = ProcessingStep.ANALYZING_PDF,
+                progressPercent = 2,
+                progressMessage = "Downloading PDF from source link..."
+            )
+            try {
+                val normalized = pdfUrl.trim()
+                require(normalized.startsWith("https://") || normalized.startsWith("http://")) {
+                    "Please paste a direct HTTP/HTTPS PDF link."
+                }
+                val connection = (java.net.URL(normalized).openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 20000
+                    readTimeout = 60000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "KARAM-2027/1.0")
+                }
+                connection.connect()
+                val code = connection.responseCode
+                require(code in 200..299) { "Source link returned HTTP $code." }
+                val file = java.io.File(getApplication<Application>().cacheDir, "linked_source_${System.currentTimeMillis()}.pdf")
+                connection.inputStream.use { input ->
+                    java.io.FileOutputStream(file).use { output -> input.copyTo(output) }
+                }
+                connection.disconnect()
+                require(file.length() > 100 && file.inputStream().use { it.readNBytes(4).contentEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46)) }) {
+                    "The source URL did not return a valid PDF."
+                }
+                _conversionState.value = _conversionState.value.copy(
+                    progressPercent = 5,
+                    progressMessage = "PDF downloaded. Starting extraction..."
+                )
+                convertFilesToCbt(
+                    testTitle = testTitle.ifBlank { "Linked JEE Paper" },
+                    questionPdfUri = android.net.Uri.fromFile(file),
+                    answerKeyUri = answerKeyUri,
+                    fallbackQuestionText = "",
+                    fallbackAnswerText = fallbackAnswerText,
+                    durationMinutes = durationMinutes,
+                    pdfFileName = "Linked_JEE_Paper.pdf"
+                )
+            } catch (e: Exception) {
+                _conversionState.value = ConversionUiState(
+                    isProcessing = false,
+                    errorMessage = "Source-link import failed: ${e.localizedMessage ?: "invalid PDF link"}"
+                )
+            }
+        }
     }
 
     fun convertFilesToCbt(

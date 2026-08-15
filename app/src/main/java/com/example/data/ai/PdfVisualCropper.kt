@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
 
 /**
  * Creates question visuals ONLY from original PDF page geometry.
@@ -38,7 +39,7 @@ object PdfVisualCropper {
         val tempPdf = File(context.cacheDir, "crop_$testId.pdf")
 
         try {
-            context.contentResolver.openInputStream(pdfUri)?.use { input ->
+            (if (pdfUri.scheme == "file") FileInputStream(File(pdfUri.path ?: return@withContext questions)) else context.contentResolver.openInputStream(pdfUri))?.use { input ->
                 FileOutputStream(tempPdf).use { output -> input.copyTo(output) }
             } ?: return@withContext questions
 
