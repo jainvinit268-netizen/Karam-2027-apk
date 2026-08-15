@@ -1,0 +1,78 @@
+name: Fix Gemini generateContent config
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fix REST generationConfig for Gemini 3.6
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('app/src/main/java')
+          changed = []
+          for p in root.rglob('*.kt'):
+              s = p.read_text()
+              old = s
+
+              # generateContent uses responseMimeType inside generationConfig.
+              s = s.replace(
+                  'put("responseFormat", JSONObject().apply { put("mimeType", "application/json") })',
+                  'put("responseMimeType", "application/json")'
+              )
+
+              # Previous migration accidentally used an Interactions-style wrapper.
+              old_block = '''val responseFormat = JSONObject().apply {
+                        put("text", JSONObject().apply {
+                            put("mimeType", "application/json")
+                        })
+                    }
+                    put("responseFormat", responseFormat)'''
+              s = s.replace(old_block, 'put("responseMimeType", "application/json")')
+
+              # Gemini 3.6 deprecates sampling controls for generateContent.
+              for line in [
+                  'put("temperature", 0.0)\n',
+                  'put("temperature", 0.1)\n',
+                  'put("temperature", 0.2)\n',
+                  'put("temperature", 0.7)\n',
+                  'put("topP", 0.8)\n',
+                  'put("topP", 0.95)\n',
+                  'put("topK", 40)\n',
+              ]:
+                  s = s.replace(line, '')
+
+              if s != old:
+                  p.write_text(s)
+                  changed.append(str(p))
+
+          print('Patched:', *changed, sep='\n')
+          if not changed:
+              raise SystemExit('No Gemini generateContent config changes found')
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java
+          git commit -m 'Fix Gemini 3.6 generateContent response config'
+          git push
+
+      - name: Remove one-time workflow
+        shell: bash
+        run: |
+          git rm -f .github/workflows/fix-gemini-generatecontent.yml
+          git commit -m 'Remove one-time Gemini config fix workflow'
+          git push
