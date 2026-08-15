@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 object GeminiJeeExtractor {
     private const val TAG = "GeminiJeeExtractor"
-    private const val MODEL_NAME = "gemini-2.5-flash"
+    private const val MODEL_NAME = "gemini-3.6-flash"
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL_NAME:generateContent"
 
     private val client = OkHttpClient.Builder()
@@ -201,11 +201,11 @@ object GeminiJeeExtractor {
                 put("contents", contentsArray)
 
                 val genConfig = JSONObject().apply {
-                    put("temperature", 0.1)
-                    put("topP", 0.95)
-                    put("maxOutputTokens", 8192)
+                                                            put("maxOutputTokens", 8192)
                     val responseFormat = JSONObject().apply {
-                        put("mimeType", "application/json")
+                        put("text", JSONObject().apply {
+                            put("mimeType", "application/json")
+                        })
                     }
                     put("responseFormat", responseFormat)
                 }

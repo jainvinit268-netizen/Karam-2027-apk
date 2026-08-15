@@ -369,7 +369,7 @@ fun AiSettingsDialog(
                                 ) {
                                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Sending test prompt to Gemini API (gemini-2.5-flash)...", fontSize = 12.sp)
+                                    Text("Sending test prompt to Gemini API (gemini-3.6-flash)...", fontSize = 12.sp)
                                 }
                             }
                         }

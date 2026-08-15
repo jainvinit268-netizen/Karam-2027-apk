@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
  */
 object StructuredJeeDocumentExtractor {
     private const val TAG = "StructuredJeeExtractor"
-    private const val MODEL = "gemini-2.5-flash"
+    private const val MODEL = "gemini-3.6-flash"
     private const val URL = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
     private const val PAGE_BATCH = 4
 
@@ -234,8 +234,7 @@ object StructuredJeeDocumentExtractor {
                 put(JSONObject().apply { put("parts", parts) })
             })
             put("generationConfig", JSONObject().apply {
-                put("temperature", 0.0)
-                put("topP", 0.8)
+                                put("topP", 0.8)
                 put("maxOutputTokens", 12000)
                 put("responseFormat", JSONObject().apply { put("mimeType", "application/json") })
             })
