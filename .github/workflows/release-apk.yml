@@ -1,0 +1,40 @@
+name: Release APK
+
+on:
+  workflow_run:
+    workflows: ["Build and Release Debug APK"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug-apk-${{ github.event.workflow_run.run_number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: release
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          APK="release/app-debug-apk-${RUN_NUMBER}/app-debug.apk"
+          if [ ! -f "$APK" ]; then
+            APK="$(find release -type f -name '*.apk' | head -n 1)"
+          fi
+          test -s "$APK"
+          TAG="v2027-debug-${RUN_NUMBER}"
+          gh release create "$TAG" "$APK" \
+            --repo "${{ github.repository }}" \
+            --title "KARAM 2027 APK • Build #${RUN_NUMBER}" \
+            --notes "Official KARAM 2027 Android APK release.\n\nBuild: #${RUN_NUMBER}\nCommit: ${SHA}\n\nTesting/debug build." \
+            --target "${SHA}"
