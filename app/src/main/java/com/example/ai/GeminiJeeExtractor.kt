@@ -181,8 +181,6 @@ object GeminiJeeExtractor {
                     val contentObj = JSONObject().apply {
                         val partsArray = JSONArray().apply {
                             put(JSONObject().apply { put("text", prompt) })
-
-                            // If page images are provided, attach up to 6 pages as inline_data
                             for (i in 0 until minOf(pageImagesBase64.size, 6)) {
                                 val imgBase64 = pageImagesBase64[i]
                                 if (imgBase64.isNotBlank()) {
@@ -201,13 +199,8 @@ object GeminiJeeExtractor {
                 put("contents", contentsArray)
 
                 val genConfig = JSONObject().apply {
-                                                            put("maxOutputTokens", 8192)
-                    val responseFormat = JSONObject().apply {
-                        put("text", JSONObject().apply {
-                            put("mimeType", "application/json")
-                        })
-                    }
-                    put("responseFormat", responseFormat)
+                    put("maxOutputTokens", 8192)
+                    put("responseMimeType", "application/json")
                 }
                 put("generationConfig", genConfig)
             }
@@ -403,10 +396,8 @@ object GeminiJeeExtractor {
         answerKeyContent: String,
         testTitle: String
     ): ExtractionResult {
-        // 1. Parse Answer Key with multiple format patterns
         val answerMap = mutableMapOf<Int, String>()
-        
-        // Pattern 1: Q1: B or Q1. B or Q1 - B or 1. A or 1: (A)
+
         val ansPatterns = listOf(
             Regex("""(?:Q|Question|q)?\s*(\d+)[\s*:\.\-\=\)]+[\(]?([A-Da-d0-9\.\-]+)[\)]?"""),
             Regex("""(\d+)\s*\.\s*\(([A-Da-d0-9\.\-]+)\)"""),
@@ -417,8 +408,6 @@ object GeminiJeeExtractor {
         for (line in answerKeyContent.lines()) {
             val trimmed = line.trim()
             if (trimmed.isBlank() || trimmed.startsWith("//") || trimmed.startsWith("#")) continue
-
-            // Check comma or pipe separated keys (e.g. Q1: A | Q2: B, Q3: C)
             val tokens = trimmed.split(Regex("""[\|,;]"""))
             for (token in tokens) {
                 val tokenTrimmed = token.trim()
@@ -427,7 +416,6 @@ object GeminiJeeExtractor {
                     if (match != null) {
                         val qNum = match.groupValues[1].toIntOrNull()
                         var ans = match.groupValues[2].trim().uppercase()
-                        // Strip parenthesis if needed
                         ans = ans.removePrefix("(").removeSuffix(")")
                         if (qNum != null && ans.isNotBlank() && !answerMap.containsKey(qNum)) {
                             answerMap[qNum] = ans
@@ -440,16 +428,12 @@ object GeminiJeeExtractor {
 
         val questions = mutableListOf<QuestionItem>()
         val flagged = mutableListOf<Int>()
-
-        // 2. Identify Subject Blocks
         val cleanPaper = questionPaperContent.trim()
-        
-        // Pattern 1: Standard NTA Q1. / Question 1 / [PHYSICS] Q1. / 1.
+
         val qBlockRegex = Regex("""(?:(?:^|\n)\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q\.?|Question|Problem)?\s*(\d+)[\.\:\-\)])(.*?)(?=(?:(?:\n\s*(?:\[?(?:PHYSICS|CHEMISTRY|MATHEMATICS)[\w\s\(\)\-\]]*)?\s*(?:Q\.?|Question|Problem)?\s*\d+[\.\:\-\)])|$))""", RegexOption.DOT_MATCHES_ALL)
 
         var matches = qBlockRegex.findAll(cleanPaper).toList()
 
-        // Pattern 2 fallback: Numbered lines "1. " or "1) "
         if (matches.isEmpty() && cleanPaper.isNotBlank()) {
             val altRegex = Regex("""(?:(?:^|\n)\s*(\d+)[\.\)]\s+)(.*?)(?=(?:(?:\n\s*\d+[\.\)]\s+)|$))""", RegexOption.DOT_MATCHES_ALL)
             matches = altRegex.findAll(cleanPaper).toList()
@@ -469,7 +453,6 @@ object GeminiJeeExtractor {
                     else -> Subject.MATHEMATICS
                 }
 
-                // Determine if MCQ or Numerical
                 val isNumerical = fullText.contains("SECTION B", ignoreCase = true) ||
                         fullText.contains("NUMERICAL", ignoreCase = true) ||
                         (qNum in listOf(21, 22, 23, 24, 25, 46, 47, 48, 49, 50, 71, 72, 73, 74, 75)) ||
@@ -482,8 +465,7 @@ object GeminiJeeExtractor {
                 var questionBody = fullText
 
                 if (!isNumerical) {
-                    // Extract (A), (B), (C), (D) or (1), (2), (3), (4) or A), B), C), D)
-                    val optRegex = Regex("""(?:[\(\[]?([A-Da-d1-4])[\)\]\.]\s*)([^\(\[\n]+)""")
+                    val optRegex = Regex("""(?:[\(\[]?([A-Da-d1-4])[\)\]\.\s*)([^\(\[\n]+)""")
                     val optMatches = optRegex.findAll(fullText).toList()
                     if (optMatches.size >= 2) {
                         questionBody = fullText.substring(0, optMatches[0].range.first).trim()
