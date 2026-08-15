@@ -3,13 +3,14 @@ name: Apply source-link CBT patch
 on:
   push:
     branches: [ main ]
+    paths:
+      - .github/source-link-patch-trigger.txt
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: contains(github.event.head_commit.message, '[source-link-patch]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +21,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           vm = Path('app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt')
           s = vm.read_text()
@@ -50,7 +50,6 @@ jobs:
                   require(normalized.startsWith("https://") || normalized.startsWith("http://")) {
                       "Please paste a direct HTTP/HTTPS PDF link."
                   }
-
                   val connection = (java.net.URL(normalized).openConnection() as java.net.HttpURLConnection).apply {
                       requestMethod = "GET"
                       connectTimeout = 20_000
@@ -58,7 +57,6 @@ jobs:
                       instanceFollowRedirects = true
                       setRequestProperty("User-Agent", "KARAM-2027/1.0")
                   }
-
                   val file = java.io.File(getApplication<Application>().cacheDir, "linked_source_${System.currentTimeMillis()}.pdf")
                   connection.connect()
                   val code = connection.responseCode
@@ -67,19 +65,15 @@ jobs:
                       java.io.FileOutputStream(file).use { output -> input.copyTo(output) }
                   }
                   connection.disconnect()
-
                   require(file.length() > 100) { "The source link returned an empty or invalid file." }
-
-                  val uri = android.net.Uri.fromFile(file)
-                  val name = file.name
                   convertFilesToCbt(
                       testTitle = testTitle.ifBlank { "Linked JEE Paper" },
-                      questionPdfUri = uri,
+                      questionPdfUri = android.net.Uri.fromFile(file),
                       answerKeyUri = answerKeyUri,
                       fallbackQuestionText = "",
                       fallbackAnswerText = fallbackAnswerText,
                       durationMinutes = durationMinutes,
-                      pdfFileName = name
+                      pdfFileName = file.name
                   )
               } catch (e: Exception) {
                   _conversionState.value = ConversionUiState(
@@ -93,8 +87,7 @@ jobs:
 '''
               if marker not in s:
                   raise SystemExit('ViewModel insertion marker not found')
-              s = s.replace(marker, fn + marker, 1)
-              vm.write_text(s)
+              vm.write_text(s.replace(marker, fn + marker, 1))
 
           ui = Path('app/src/main/java/com/example/ui/components/PdfToCbtSection.kt')
           s = ui.read_text()
@@ -119,7 +112,7 @@ jobs:
                       style = MaterialTheme.typography.titleSmall
                   )
                   Text(
-                      text = "Paste a direct PDF URL. The downloaded PDF goes through the same extraction pipeline and the generated CBT is saved in this app.",
+                      text = "Paste a direct PDF URL. The downloaded PDF uses the same extraction pipeline and the generated CBT is saved in this app.",
                       style = MaterialTheme.typography.bodySmall,
                       color = MaterialTheme.colorScheme.onSurfaceVariant
                   )
@@ -198,9 +191,9 @@ jobs:
           git commit -m "feat: persistent direct source-link CBT import"
           git push
 
-      - name: Remove one-time patch workflow
+      - name: Remove one-time patch files
         if: success()
         run: |
-          git rm .github/workflows/apply-source-link-patch.yml
+          git rm .github/workflows/apply-source-link-patch.yml .github/source-link-patch-trigger.txt
           git commit -m "chore: remove one-time source-link patch workflow"
           git push
