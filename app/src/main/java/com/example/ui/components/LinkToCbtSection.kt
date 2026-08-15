@@ -25,32 +25,31 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.TestLinkImporter
 import com.example.ui.theme.JeeCyan
 import com.example.ui.theme.NtaGreenLight
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.JeeViewModel
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun LinkToCbtSection(
     viewModel: JeeViewModel,
     modifier: Modifier = Modifier
 ) {
-    val conversionState by viewModel.conversionState.collectAsState()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var testLink by remember { mutableStateOf("") }
     var importing by remember { mutableStateOf(false) }
@@ -117,7 +116,7 @@ fun LinkToCbtSection(
                     importError = null
                     try {
                         require(raw.startsWith("karam://test/")) { "Invalid KARAM test link." }
-                        val testId = TestLinkImporter.import(viewModel.getApplicationContext(), Uri.parse(raw))
+                        val testId = TestLinkImporter.import(context, Uri.parse(raw))
                         require(!testId.isNullOrBlank()) { "Test link could not be imported." }
                         viewModel.resetConversionState()
                         viewModel.navigateTo(AppScreen.CbtExam(testId))
@@ -149,21 +148,6 @@ fun LinkToCbtSection(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF4A1720))
             ) {
                 Text(it, modifier = Modifier.padding(16.dp), color = Color.White)
-            }
-        }
-
-        if (conversionState.newlyCreatedTestId != null) {
-            Button(
-                onClick = {
-                    val id = conversionState.newlyCreatedTestId!!
-                    viewModel.resetConversionState()
-                    viewModel.navigateTo(AppScreen.CbtExam(id))
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = NtaGreenLight, contentColor = Color.Black),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("LAUNCH CBT", fontWeight = FontWeight.Bold)
             }
         }
     }
