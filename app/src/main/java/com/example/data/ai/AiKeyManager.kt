@@ -179,7 +179,7 @@ class AiKeyManager private constructor(private val context: Context) {
             val status = if (response.isSuccessful) {
                 AiConnectionStatus.Success(
                     latencyMs = latency,
-                    model = "gemini-3.5-flash",
+                    model = "gemini-2.5-flash",
                     message = "Connected successfully (${latency}ms latency)"
                 )
             } else {
