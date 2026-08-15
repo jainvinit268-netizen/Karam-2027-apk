@@ -1,0 +1,62 @@
+name: Migrate Gemini 3.6
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch Gemini model and 3.x request format
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('app/src/main/java')
+          changed = []
+          for p in root.rglob('*.kt'):
+              s = p.read_text()
+              old = s
+              s = s.replace('gemini-2.5-flash', 'gemini-3.6-flash')
+              s = s.replace('gemini-3.5-flash', 'gemini-3.6-flash')
+              s = s.replace('put("temperature", 0.1)\n', '')
+              s = s.replace('put("temperature", 0.0)\n', '')
+              s = s.replace('put("topP", 0.95)\n', '')
+              s = s.replace('put("topK", 40)\n', '')
+              if 'val responseFormat = JSONObject().apply {\n                        put("mimeType", "application/json")\n                    }' in s:
+                  s = s.replace(
+                      'val responseFormat = JSONObject().apply {\n                        put("mimeType", "application/json")\n                    }',
+                      'val responseFormat = JSONObject().apply {\n                        put("text", JSONObject().apply {\n                            put("mimeType", "application/json")\n                        })\n                    }'
+                  )
+              if s != old:
+                  p.write_text(s)
+                  changed.append(str(p))
+          print('Patched:', *changed, sep='\n')
+          PY
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No Gemini migration changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java
+          git commit -m 'Migrate Gemini extraction to 3.6 Flash'
+          git push
+
+      - name: Remove one-time migration workflow
+        shell: bash
+        run: |
+          git rm -f .github/workflows/migrate-gemini-36.yml
+          git commit -m 'Remove one-time Gemini migration workflow'
+          git push
