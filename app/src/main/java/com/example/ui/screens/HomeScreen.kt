@@ -25,7 +25,7 @@ import com.example.ui.viewmodel.JeeViewModel
 
 enum class HomeSection(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     TEST_LIBRARY("Tests", Icons.Default.LibraryBooks),
-    PDF_TO_CBT("PDF to CBT", Icons.Default.CloudUpload),
+    LINK_TO_CBT("Link to CBT", Icons.Default.Link),
     MISTAKE_BOOK("Mistakes", Icons.Default.MenuBook),
     ANALYTICS("Analytics", Icons.Default.AutoGraph),
     ATTEMPTS("History", Icons.Default.Assessment)
@@ -103,7 +103,6 @@ fun HomeScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Sacred Divine Invocations Banner
             Surface(
                 onClick = { viewModel.navigateTo(AppScreen.SplashInvocation) },
                 shape = RoundedCornerShape(14.dp),
@@ -156,7 +155,6 @@ fun HomeScreen(
                 }
             }
 
-            // Smooth Animated Section Switching Container
             AnimatedContent(
                 targetState = selectedSection,
                 transitionSpec = {
@@ -175,7 +173,7 @@ fun HomeScreen(
             ) { section ->
                 when (section) {
                     HomeSection.TEST_LIBRARY -> TestLibrarySection(viewModel = viewModel)
-                    HomeSection.PDF_TO_CBT -> PdfToCbtSection(viewModel = viewModel)
+                    HomeSection.LINK_TO_CBT -> LinkToCbtSection(viewModel = viewModel)
                     HomeSection.MISTAKE_BOOK -> MistakeBookSection(viewModel = viewModel)
                     HomeSection.ANALYTICS -> AnalyticsCoachSection(viewModel = viewModel)
                     HomeSection.ATTEMPTS -> AttemptsHistorySection(viewModel = viewModel)
