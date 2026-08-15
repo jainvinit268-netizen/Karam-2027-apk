@@ -74,7 +74,7 @@ object PairedJsonTestImporter {
         val solution = q.optJSONObject("solution")
         val solutionText = firstNonBlank(
             q.optString("solutionText"),
-            solution?.optString("bestSolution"),
+            solution?.optString("bestSolution") ?: "",
             "Solution not provided in source JSON."
         )
 
