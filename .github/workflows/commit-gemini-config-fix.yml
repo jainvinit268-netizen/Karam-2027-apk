@@ -1,0 +1,51 @@
+name: Commit Gemini config fix
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Gemini generationConfig
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/ai/GeminiJeeExtractor.kt')
+          s = p.read_text()
+          old = '''                val genConfig = JSONObject().apply {
+                                                            put("maxOutputTokens", 8192)
+                    val responseFormat = JSONObject().apply {
+                        put("text", JSONObject().apply {
+                            put("mimeType", "application/json")
+                        })
+                    }
+                    put("responseFormat", responseFormat)
+                }
+'''
+          new = '''                val genConfig = JSONObject().apply {
+                    put("maxOutputTokens", 8192)
+                    put("responseMimeType", "application/json")
+                }
+'''
+          if old not in s:
+              raise SystemExit('Expected Gemini generationConfig block not found; refusing to modify file.')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ai/GeminiJeeExtractor.kt
+          git commit -m "Fix Gemini JSON response generation config"
+          git push
+      - name: Remove one-time workflow
+        run: |
+          rm .github/workflows/commit-gemini-config-fix.yml
+          git add .github/workflows/commit-gemini-config-fix.yml
+          git commit -m "Remove one-time Gemini config fix workflow"
+          git push
