@@ -1,0 +1,1 @@
+Status: provider-agnostic JSON parser, file reader, import service, UI components, and schema documentation are implemented on feature/json-import-and-source-folders. The UI component is intended to be mounted from the Test Library/conversion screen; existing Gemini/PDF workflows are not replaced.
