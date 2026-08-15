@@ -65,15 +65,7 @@ class AiKeyManager private constructor(private val context: Context) {
         return if (key.isBlank() || key == "MY_GEMINI_API_KEY" || key == "null") null else key
     }
 
-    /**
-     * Resolves the active Gemini API key according to the 3-tier hierarchy:
-     * 1. User-configured custom key
-     * 2. Server-side / BuildConfig environment secret
-     * 3. null (Not Configured)
-     */
-    fun getActiveApiKey(): String? {
-        return getUserCustomKey() ?: getEnvSecretKey()
-    }
+    fun getActiveApiKey(): String? = getUserCustomKey() ?: getEnvSecretKey()
 
     fun getActiveKeySource(): AiKeySource {
         return when {
@@ -109,13 +101,11 @@ class AiKeyManager private constructor(private val context: Context) {
             envKey != null -> AiKeySource.ENV_SECRET
             else -> AiKeySource.NONE
         }
-
         val masked = when {
             userKey != null -> maskKey(userKey)
             envKey != null -> "Server-side Secret (${maskKey(envKey)})"
             else -> "Not Configured"
         }
-
         return AiConfigState(
             source = source,
             isConfigured = activeKey != null,
@@ -133,7 +123,6 @@ class AiKeyManager private constructor(private val context: Context) {
 
     suspend fun testConnection(overrideKey: String? = null): AiConnectionStatus = withContext(Dispatchers.IO) {
         val keyToTest = overrideKey?.trim()?.takeIf { it.isNotEmpty() } ?: getActiveApiKey()
-
         if (keyToTest.isNullOrBlank()) {
             val status = AiConnectionStatus.Error(
                 message = "No Gemini API key available to test. Please provide an API key.",
@@ -144,11 +133,9 @@ class AiKeyManager private constructor(private val context: Context) {
         }
 
         _configState.value = computeConfigState(AiConnectionStatus.Testing)
-
         val startTime = System.currentTimeMillis()
         try {
-            val testUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$keyToTest"
-            
+            val testUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$keyToTest"
             val testPayload = JSONObject().apply {
                 val contents = JSONArray().apply {
                     val content = JSONObject().apply {
@@ -162,7 +149,7 @@ class AiKeyManager private constructor(private val context: Context) {
                 put("contents", contents)
                 val config = JSONObject().apply {
                     put("maxOutputTokens", 5)
-                    put("temperature", 0.0)
+                    put("responseMimeType", "text/plain")
                 }
                 put("generationConfig", config)
             }
@@ -171,7 +158,6 @@ class AiKeyManager private constructor(private val context: Context) {
                 .url(testUrl)
                 .post(testPayload.toString().toRequestBody("application/json".toMediaType()))
                 .build()
-
             val response = httpClient.newCall(request).execute()
             val latency = System.currentTimeMillis() - startTime
             val responseBody = response.body?.string() ?: ""
@@ -179,25 +165,24 @@ class AiKeyManager private constructor(private val context: Context) {
             val status = if (response.isSuccessful) {
                 AiConnectionStatus.Success(
                     latencyMs = latency,
-                    model = "gemini-2.5-flash",
+                    model = "gemini-3.6-flash",
                     message = "Connected successfully (${latency}ms latency)"
                 )
             } else {
                 val code = response.code
                 val friendlyMessage = when (code) {
                     400, 403 -> "Invalid or unauthorized Gemini API key. Please check your key permissions in Google AI Studio."
-                    404 -> "Requested model endpoint not found (HTTP 404)."
-                    429 -> "Gemini API Quota Exceeded (HTTP 429). Rate limit reached or billing quota exhausted."
-                    500, 503 -> "Google Gemini AI service is temporarily overloaded or unavailable. Try again in a moment."
+                    404 -> "Gemini 3.6 Flash endpoint is unavailable for this key/project."
+                    429 -> "Gemini API quota exceeded (HTTP 429)."
+                    500, 503 -> "Google Gemini service is temporarily unavailable. Try again in a moment."
                     else -> "Connection failed with HTTP $code: ${response.message}"
                 }
                 AiConnectionStatus.Error(
                     message = friendlyMessage,
                     httpCode = code,
-                    details = responseBody.take(200)
+                    details = responseBody.take(300)
                 )
             }
-
             _configState.value = computeConfigState(status)
             return@withContext status
         } catch (e: Exception) {
