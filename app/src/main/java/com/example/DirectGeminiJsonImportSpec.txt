@@ -1,0 +1,1 @@
+Direct Gemini JSON import is implemented as a file-picker flow in the Android app. The selected .json file is read as UTF-8, parsed with DirectJsonTestImporter, and imported into the existing local Test Library. This feature must not call Gemini or any network service.
