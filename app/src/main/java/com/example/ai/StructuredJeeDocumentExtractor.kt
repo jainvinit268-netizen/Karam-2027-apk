@@ -234,9 +234,8 @@ object StructuredJeeDocumentExtractor {
                 put(JSONObject().apply { put("parts", parts) })
             })
             put("generationConfig", JSONObject().apply {
-                                put("topP", 0.8)
-                put("maxOutputTokens", 12000)
-                put("responseFormat", JSONObject().apply { put("mimeType", "application/json") })
+                                                put("maxOutputTokens", 12000)
+                put("responseMimeType", "application/json")
             })
         }
 
