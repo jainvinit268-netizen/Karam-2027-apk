@@ -25,7 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.DirectJsonTestImporter
+import com.example.PairedJsonTestImporter
 import com.example.data.local.JeeTestEntity
 import com.example.data.model.Subject
 import com.example.ui.theme.*
@@ -41,22 +41,38 @@ fun TestLibrarySection(viewModel: JeeViewModel, modifier: Modifier = Modifier) {
     var testForCustomLaunch by remember { mutableStateOf<JeeTestEntity?>(null) }
     var importMessage by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
+    var questionJsonUri by remember { mutableStateOf<Uri?>(null) }
+    var answerKeyJsonUri by remember { mutableStateOf<Uri?>(null) }
     val scope = rememberCoroutineScope()
 
-    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
+    fun launchPairedImport() {
+        val qUri = questionJsonUri ?: return
+        val aUri = answerKeyJsonUri ?: return
         scope.launch {
             importing = true
             importMessage = null
             try {
-                val testId = DirectJsonTestImporter.import(viewModel.getApplication(), uri)
-                importMessage = "Test imported successfully: $testId"
+                val testId = PairedJsonTestImporter.import(viewModel.getApplication(), qUri, aUri)
+                importMessage = "Test created successfully: $testId"
+                questionJsonUri = null
+                answerKeyJsonUri = null
             } catch (e: Exception) {
-                importMessage = "JSON import failed: ${e.message ?: "Invalid test JSON"}"
+                importMessage = "JSON mapping failed: ${e.message ?: "Invalid question/answer JSON"}"
             } finally {
                 importing = false
             }
         }
+    }
+
+    val questionPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) questionJsonUri = uri
+    }
+    val answerPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) answerKeyJsonUri = uri
+    }
+
+    LaunchedEffect(questionJsonUri, answerKeyJsonUri) {
+        if (questionJsonUri != null && answerKeyJsonUri != null && !importing) launchPairedImport()
     }
 
     val filterOptions = listOf("All", "Full Syllabus", "Physics", "Chemistry", "Maths")
@@ -88,17 +104,52 @@ fun TestLibrarySection(viewModel: JeeViewModel, modifier: Modifier = Modifier) {
                 modifier = Modifier.weight(1f).testTag("test_search_input")
             )
             FilledTonalIconButton(
-                onClick = { jsonPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
+                onClick = { questionPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
                 enabled = !importing,
-                modifier = Modifier.size(52.dp).testTag("btn_import_json_test")
-            ) { Icon(Icons.Default.UploadFile, contentDescription = "Import JSON Test") }
+                modifier = Modifier.size(52.dp).testTag("btn_import_questions_json")
+            ) { Icon(Icons.Default.UploadFile, contentDescription = "Import Questions JSON") }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Build Test from 2 JSON files", fontWeight = FontWeight.Bold)
+                Text("Select the Questions JSON and the separate Answer Key JSON. KARAM maps them by question ID/number and creates the CBT automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { questionPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
+                        enabled = !importing,
+                        modifier = Modifier.weight(1f).testTag("btn_questions_json")
+                    ) {
+                        Icon(Icons.Default.Quiz, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text(if (questionJsonUri == null) "Questions JSON" else "Questions ✓", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { answerPicker.launch(arrayOf("application/json", "text/json", "text/plain")) },
+                        enabled = !importing,
+                        modifier = Modifier.weight(1f).testTag("btn_answer_key_json")
+                    ) {
+                        Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text(if (answerKeyJsonUri == null) "Answer Key JSON" else "Key ✓", fontSize = 12.sp)
+                    }
+                }
+                if (questionJsonUri != null || answerKeyJsonUri != null) {
+                    Text(
+                        text = when {
+                            importing -> "Mapping questions + answer key…"
+                            questionJsonUri != null && answerKeyJsonUri == null -> "Questions selected • now select Answer Key JSON"
+                            questionJsonUri == null && answerKeyJsonUri != null -> "Answer key selected • now select Questions JSON"
+                            else -> "Both selected • creating test…"
+                        },
+                        color = JeeCyan,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
         }
 
         importMessage?.let { message ->
             AssistChip(
                 onClick = { importMessage = null },
                 label = { Text(message, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                leadingIcon = { Icon(if (message.startsWith("Test imported")) Icons.Default.CheckCircle else Icons.Default.Error, contentDescription = null) },
+                leadingIcon = { Icon(if (message.startsWith("Test created")) Icons.Default.CheckCircle else Icons.Default.Error, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth().testTag("json_import_status")
             )
         }
@@ -126,18 +177,21 @@ fun TestLibrarySection(viewModel: JeeViewModel, modifier: Modifier = Modifier) {
                         Icon(Icons.Default.Description, contentDescription = null, tint = JeeCyan, modifier = Modifier.size(48.dp))
                         Text(text = if (tests.isEmpty()) "Test Library is Empty" else "No tests match your filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            text = if (tests.isEmpty()) "Upload a ready-made JEE CBT JSON from any website, AI tool, or script, or use the PDF + official key workflow." else "Clear filters or import a new JSON test.",
+                            text = if (tests.isEmpty()) "Upload Questions JSON + Answer Key JSON and KARAM will map them into a JEE CBT automatically, or use the PDF + official key workflow." else "Clear filters or import a new test.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 12.dp)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { jsonPicker.launch(arrayOf("application/json", "text/json", "text/plain")) }, enabled = !importing, colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_import_json")) {
-                                Icon(Icons.Default.DataObject, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("Upload JSON", fontWeight = FontWeight.Bold)
+                            Button(onClick = { questionPicker.launch(arrayOf("application/json", "text/json", "text/plain")) }, enabled = !importing, colors = ButtonDefaults.buttonColors(containerColor = JeeCyan, contentColor = Color.Black), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_questions_json")) {
+                                Icon(Icons.Default.DataObject, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("Questions JSON", fontWeight = FontWeight.Bold)
                             }
-                            Button(onClick = { viewModel.navigateTo(AppScreen.ConvertPdf) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_upload_pdf")) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("PDF + Key")
+                            Button(onClick = { answerPicker.launch(arrayOf("application/json", "text/json", "text/plain")) }, enabled = !importing, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_answer_key_json")) {
+                                Icon(Icons.Default.Key, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("Answer Key")
                             }
+                        }
+                        Button(onClick = { viewModel.navigateTo(AppScreen.ConvertPdf) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(10.dp), modifier = Modifier.testTag("btn_empty_upload_pdf")) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null); Spacer(modifier = Modifier.width(6.dp)); Text("PDF + Key")
                         }
                     }
                 }
