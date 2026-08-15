@@ -1,0 +1,34 @@
+name: Apply Direct PDF Link
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply patch
+        run: python3 .github/apply_direct_link.py
+
+      - name: Commit source changes
+        run: |
+          if git diff --quiet; then
+            echo "No source changes needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt \
+                  app/src/main/java/com/example/data/ai/PdfDocumentHelper.kt \
+                  app/src/main/java/com/example/data/ai/PdfVisualCropper.kt \
+                  app/src/main/java/com/example/ui/components/PdfToCbtSection.kt
+          git commit -m "feat: support direct PDF source links [skip ci]"
+          git push
