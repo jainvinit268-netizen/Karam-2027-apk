@@ -1,0 +1,105 @@
+name: Apply direct Gemini JSON import
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add JSON file import support
+        shell: python
+        run: |
+          from pathlib import Path
+
+          vm = Path('app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt')
+          s = vm.read_text()
+          marker = '    fun resetConversionState() {'
+          if 'fun importGeminiJsonFile(' not in s:
+              method = r'''    /** Imports a complete Gemini-generated test JSON file without network calls or PDF extraction. */
+              fun importGeminiJsonFile(json: String) {
+                  conversionJob?.cancel()
+                  conversionTickerJob?.cancel()
+                  conversionJob = viewModelScope.launch(Dispatchers.IO) {
+                      _conversionState.value = ConversionUiState(isProcessing = true, currentStep = ProcessingStep.BUILDING_CBT, progressPercent = 20, progressMessage = "Validating Gemini JSON...")
+                      try {
+                          val payload = com.example.data.model.DirectJsonTestImporter.parse(json)
+                          val questions = repository.parseQuestions(payload.questionsJson)
+                          require(questions.isNotEmpty()) { "The JSON contains no questions." }
+                          val existing = repository.getTestById(payload.testId)
+                          if (existing == null) {
+                              val test = JeeTestEntity(
+                                  testId = payload.testId,
+                                  title = payload.title,
+                                  sourcePdfName = "Gemini JSON",
+                                  totalQuestions = questions.size,
+                                  durationMinutes = payload.durationMinutes,
+                                  createdAt = System.currentTimeMillis(),
+                                  questionsJson = repository.convertersFromQuestions(questions),
+                                  isSample = false,
+                                  physicsQuestionsCount = questions.count { it.subject == Subject.PHYSICS },
+                                  chemistryQuestionsCount = questions.count { it.subject == Subject.CHEMISTRY },
+                                  mathsQuestionsCount = questions.count { it.subject == Subject.MATHEMATICS },
+                                  tags = "Gemini JSON Import"
+                              )
+                              repository.insertTest(test, questions)
+                          }
+                          _conversionState.value = ConversionUiState(isProcessing = false, currentStep = ProcessingStep.COMPLETE, progressPercent = 100, progressMessage = "Test imported successfully.", extractedQuestionsCount = questions.size, validatedCount = questions.size, newlyCreatedTestId = payload.testId, extractedQuestions = questions)
+                      } catch (e: Exception) {
+                          _conversionState.value = ConversionUiState(isProcessing = false, errorMessage = "JSON import failed: ${e.localizedMessage ?: "invalid test JSON"}")
+                      }
+                  }
+              }
+
+'''
+              if marker in s:
+                  s = s.replace(marker, method + marker, 1)
+                  vm.write_text(s)
+
+          activity = Path('app/src/main/java/com/example/MainActivity.kt')
+          a = activity.read_text()
+          if 'openDocumentForGeminiJson' not in a:
+              a = a.replace('import android.os.Bundle', 'import android.os.Bundle\nimport androidx.activity.result.contract.ActivityResultContracts', 1)
+              a = a.replace('class MainActivity : ComponentActivity() {', '''class MainActivity : ComponentActivity() {
+    private val openJson = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                runCatching {
+                    val json = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        ?: error("Could not open JSON file")
+                    viewModel.importGeminiJsonFile(json)
+                }.onFailure { error ->
+                    viewModel.showImportError(error.localizedMessage ?: "Could not import JSON")
+                }
+            }
+        }
+    }
+
+    fun openDocumentForGeminiJson() {
+        openJson.launch(arrayOf("application/json", "text/json", "text/plain"))
+    }
+''', 1)
+              activity.write_text(a)
+
+          ui = Path('app/src/main/java/com/example/ui/components/LinkToCbtSection.kt')
+          if ui.exists():
+              u = ui.read_text()
+              if 'Import Gemini JSON' not in u:
+                  # Add a minimal button before the existing link section's first top-level content.
+                  u = u.replace('Column(', 'Column(', 1)
+                  if 'Button(' in u:
+                      first_button = u.find('Button(')
+                      u = u[:first_button] + '''Button(onClick = { viewModel.openGeminiJsonPicker() }, modifier = Modifier.fillMaxWidth()) { Text("Import Gemini JSON File") }\n        ''' + u[first_button:]
+                      ui.write_text(u)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/viewmodel/JeeViewModel.kt app/src/main/java/com/example/MainActivity.kt app/src/main/java/com/example/ui/components/LinkToCbtSection.kt
+          git diff --cached --quiet || (git commit -m "feat: import Gemini test JSON directly" && git push)
