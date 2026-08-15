@@ -1,0 +1,1 @@
+Integration note: the selected JSON is converted to the existing TestLinkPayload shape, then should be passed through the same JeeRepository.insertTest/questions path used by TestLinkImporter. The user-facing action should be labelled `Import Gemini JSON` and accept `.json` files only. On success, navigate to the imported test in the existing Test Library/CBT flow.
