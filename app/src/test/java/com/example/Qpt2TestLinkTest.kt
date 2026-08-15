@@ -5,6 +5,7 @@ import com.example.data.sample.QuizrrPartTest02Data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -48,6 +49,7 @@ class Qpt2TestLinkTest {
         assertTrue(decodedJson.contains("QPT2_MATH_01"))
         assertTrue(decodedJson.contains("QPT2_CHEM_25"))
 
+        File("/tmp/qpt2-test-link.txt").writeText(link)
         println("KARAM_TEST_LINK_START")
         println(link)
         println("KARAM_TEST_LINK_END")
